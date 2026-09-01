@@ -33,9 +33,7 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
       - name: Install wasm-pack
-        uses: jetli/wasm-pack@v0.4.0
-        with:
-          version: latest
+        run: cargo install wasm-pack --locked
       - name: Install JavaScript dependencies
         run: npm ci
       - name: Install Playwright browser
