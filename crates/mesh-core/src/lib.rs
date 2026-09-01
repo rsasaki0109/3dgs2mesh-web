@@ -727,7 +727,7 @@ pub fn cleanup_mesh(
 pub fn smooth_taubin(mesh: &mut Mesh, iterations: u32) {
     let n = mesh.positions.len() / 3;
     let mut neighbours = vec![HashSet::new(); n];
-    for f in mesh.indices.chunks_exact(3) {
+    for f in mesh.indices.as_chunks::<3>().0 {
         for a in f {
             for b in f {
                 if a != b {
@@ -768,7 +768,7 @@ pub fn smooth_taubin(mesh: &mut Mesh, iterations: u32) {
 }
 pub fn recompute_normals(mesh: &mut Mesh) {
     mesh.normals.fill(0.0);
-    for f in mesh.indices.chunks_exact(3) {
+    for f in mesh.indices.as_chunks::<3>().0 {
         let a = f[0] as usize * 3;
         let b = f[1] as usize * 3;
         let c = f[2] as usize * 3;
@@ -794,7 +794,7 @@ pub fn recompute_normals(mesh: &mut Mesh) {
             mesh.normals[i + 2] += n.z;
         }
     }
-    for n in mesh.normals.chunks_exact_mut(3) {
+    for n in mesh.normals.as_chunks_mut::<3>().0 {
         let v = Vec3::new(n[0], n[1], n[2]).normalized();
         n[0] = v.x;
         n[1] = v.y;
@@ -819,7 +819,7 @@ pub fn mesh_to_ply(mesh: &Mesh) -> Vec<u8> {
             out.push((c.clamp(0.0, 1.0) * 255.0).round() as u8);
         }
     }
-    for f in mesh.indices.chunks_exact(3) {
+    for f in mesh.indices.as_chunks::<3>().0 {
         out.push(3);
         for v in f {
             out.extend_from_slice(&v.to_le_bytes());
