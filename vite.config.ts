@@ -4,9 +4,7 @@ import { defineConfig } from "vite";
 const repositoryName = process.env.GITHUB_REPOSITORY?.split("/").at(-1);
 const base =
   process.env.VITE_BASE ??
-  (process.env.GITHUB_ACTIONS && repositoryName
-    ? `/${repositoryName}/`
-    : "/");
+  (process.env.GITHUB_ACTIONS && repositoryName ? `/${repositoryName}/` : "/");
 
 export default defineConfig({
   base,
