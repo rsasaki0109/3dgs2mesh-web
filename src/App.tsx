@@ -69,6 +69,7 @@ export default function App() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string>();
   const [sparkWarning, setSparkWarning] = useState(false);
+  const [viewerWarning, setViewerWarning] = useState(false);
   const [lightBackground, setLightBackground] = useState(false);
   const [wireframe, setWireframe] = useState(false);
   const [grid, setGrid] = useState(true);
@@ -78,7 +79,12 @@ export default function App() {
 
   useEffect(() => {
     if (!viewerHost.current) return;
-    viewer.current = new SceneViewer(viewerHost.current);
+    try {
+      viewer.current = new SceneViewer(viewerHost.current);
+    } catch {
+      viewer.current = undefined;
+      setViewerWarning(true);
+    }
     return () => {
       viewer.current?.dispose();
       worker.current?.dispose();
@@ -118,13 +124,15 @@ export default function App() {
         setDetail(
           `${inspected.report.retainedCount.toLocaleString()} Gaussians ready`,
         );
-        const spark = await viewer.current?.setSplat(
-          data,
-          name,
-          inspected.previewPositions,
-          inspected.previewColors,
-        );
-        setSparkWarning(spark ? !spark.spark : false);
+        if (viewer.current) {
+          const spark = await viewer.current.setSplat(
+            data,
+            name,
+            inspected.previewPositions,
+            inspected.previewColors,
+          );
+          setSparkWarning(!spark.spark);
+        }
         viewer.current?.setMode("splat");
         setMode("splat");
       } catch (caught) {
@@ -418,12 +426,17 @@ export default function App() {
                 ))}
               </div>
             )}
-          {sparkWarning && (
+          {(sparkWarning || viewerWarning) && (
             <div className="warning-box">
-              <strong>Splat preview fallback</strong>
+              <strong>
+                {viewerWarning
+                  ? "3D viewer unavailable"
+                  : "Splat preview fallback"}
+              </strong>
               <span>
-                Spark could not initialize on this device. Mesh conversion
-                remains available.
+                {viewerWarning
+                  ? "WebGL could not initialize on this device. Conversion, statistics, and downloads remain available."
+                  : "Spark could not initialize on this device. Mesh conversion remains available."}
               </span>
             </div>
           )}
