@@ -8,6 +8,8 @@ The project code and original documentation are Apache-2.0.
 - Three.js and bundled examples such as `GLTFExporter` and `OrbitControls` — MIT.
 - `@sparkjsdev/spark` — MIT (local packed-splat decoding and optional Gaussian Splat preview).
 - `@webgpu/types` — BSD-3-Clause (development-only WebGPU TypeScript declarations).
+- `@playcanvas/splat-transform` — MIT (development-only generation of ephemeral SPZ/SOG compatibility fixtures).
+- `webgpu` (Dawn for Node.js) — MIT (development-only compilation validation of the WebGPU shader).
 - Rust `wasm-bindgen`, `js-sys`, and `console_error_panic_hook` — MIT/Apache-2.0 dual licenses.
 - Vitest, Playwright, Biome — MIT.
 

@@ -12,7 +12,7 @@
   <a href="LICENSE"><img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-7aa2f7" /></a>
   <img alt="Rust and WebAssembly" src="https://img.shields.io/badge/core-Rust_%2B_WASM-5eead4" />
   <img alt="No backend" src="https://img.shields.io/badge/backend-none-9ece6a" />
-  <img alt="Version 0.1.0" src="https://img.shields.io/badge/version-0.1.0-bb9af7" />
+  <img alt="Version 0.1.1" src="https://img.shields.io/badge/version-0.1.1-bb9af7" />
 </p>
 
 <p align="center"><strong>Convert PLY, SPZ, SPLAT, KSPLAT, and packaged SOG Gaussian splats into colored, editable triangle meshes—entirely inside your browser.</strong></p>
@@ -56,8 +56,8 @@ All expensive work runs in a dedicated module Worker. WebGPU accelerates tiled d
 | Area | What is included |
 | --- | --- |
 | **Input** | ASCII/binary little-endian PLY plus SPZ, SPLAT, KSPLAT, and packaged SOG |
-| **Reconstruction** | Activated anisotropic Gaussians, robust bounds, oriented support AABBs, tiled WebGPU or CPU density field, deterministic automatic iso |
-| **Mesh** | Indexed Marching Tetrahedra, gradient normals, SH-DC colors, component filtering, conservative Taubin smoothing |
+| **Reconstruction** | Activated anisotropic Gaussians, visual crop box, robust bounds, chunked WebGPU or CPU density field, deterministic automatic iso |
+| **Mesh** | Indexed Marching Tetrahedra, gradient normals, SH-DC colors, component filtering, Taubin smoothing, decimation, topology diagnostics |
 | **Viewer** | Original / Mesh / Split modes, orbit controls, grid, axes, wireframe, shading, fit and reset |
 | **Export** | Colored indexed GLB, binary little-endian PLY, and OBJ generated with local Blob URLs |
 | **Safety** | Memory/device-limit checks, large-input warning, automatic Fast preset, progress, and cancellation by Worker termination |
@@ -74,7 +74,7 @@ The selected file is read by the browser and passed to a dedicated worker. It is
 | Format | v0.1 support |
 | --- | --- |
 | **PLY** | Independently parsed ASCII and `binary_little_endian` Graphdeco-style vertex data. Arbitrary scalar order is accepted. |
-| **SPZ** | Packed Niantic SPZ decoded locally through Spark. |
+| **SPZ** | Packed Niantic SPZ decoded locally through Spark. SPZ v3 is continuously validated; current Spark decoding does not accept SPZ v4. |
 | **SPLAT** | 32-byte Antimatter15-style records decoded locally through Spark. |
 | **KSPLAT** | GaussianSplats3D packed files decoded locally through Spark. |
 | **SOG** | Packaged PlayCanvas SOG ZIP using `.sog` or `.zip`, decoded locally through Spark. Loose multi-file SOG folders cannot be selected as one browser file. |
@@ -119,7 +119,7 @@ See [docs/algorithm.md](docs/algorithm.md) for equations. In short, the worker a
 | **Balanced** | ~96 | Default for small and medium object-centric assets |
 | **Detailed** | ~160 | High-detail runs after a successful lower-resolution pass |
 
-Higher resolution increases memory roughly with the number of voxels, not linearly with the displayed number. Sigma radius controls support (default 3); opacity threshold removes weak splats; bounds quantile trims center outliers from automatic bounds; iso can be automatic or manual; component filtering and conservative smoothing are optional. **Auto** prefers WebGPU for density sampling and falls back to CPU/WASM; **WebGPU required** exposes adapter/shader/device failures instead of falling back. Expert resolutions up to 256 can be expensive and may be rejected before allocation. Inputs of at least 100 MiB or 500,000 source Gaussians select Fast automatically.
+Higher resolution increases memory roughly with the number of voxels, not linearly with the displayed number. Sigma radius controls support; opacity threshold removes weak splats; bounds quantile trims center outliers; the normalized crop box limits conversion to a visible sub-volume; mesh retention enables deterministic vertex-clustering decimation. **Auto** prefers WebGPU and falls back to CPU/WASM; **WebGPU required** exposes adapter, device-loss, validation, and limit failures. WebGPU processes the field in bounded chunks and checks sampled results against the CPU equation. Expert resolutions up to 256 can still be expensive. Inputs of at least 100 MiB or 500,000 source Gaussians select Fast automatically.
 
 ## Exports
 
@@ -128,16 +128,17 @@ GLB is indexed and includes normals, RGB vertex colors, and a vertex-color-aware
 ## Known limitations
 
 - This is a density-field approximation. It is not GS2Mesh, SuGaR, GOF, or FGGS-LiDAR and has no learned stereo/depth fusion.
-- No camera/COLMAP loading, textures, texture baking, higher-order SH rendering, TSDF, denoising, outside flood fill, decimation, or guaranteed watertight/manifold topology.
+- No camera/COLMAP loading, textures, texture baking, higher-order SH rendering, TSDF, denoising, outside flood fill, or guaranteed watertight/manifold topology.
 - Thin geometry, transparent/reflective surfaces, weakly observed regions, extreme scales, and very large scenes may reconstruct poorly or require cropping.
 - Only SH DC color is used, so view-dependent appearance is lost.
 - Packed inputs are quantized or compressed and may differ slightly from their source training PLY. SOG support is limited to a single packaged `.sog`/`.zip` file.
 - WebGPU accelerates density sampling only. Spatial-bin construction, readback, Marching Tetrahedra, cleanup, and export remain CPU work in v0.1.
+- SPZ v4 currently produces an actionable unsupported-version error; use SPZ v3 or Graphdeco PLY.
 - The preview adapter uses [Spark](https://github.com/sparkjsdev/spark) when available and falls back to colored points if initialization fails.
 
 ## Browser support and performance
 
-Use a recent Chromium, Firefox, or Safari with WebAssembly and WebGL2. WebGPU acceleration depends on browser, OS, driver, and device limits; unsupported devices automatically use CPU/WASM. Conversion runs in a dedicated single-threaded worker and does not require SharedArrayBuffer, COOP/COEP, CUDA, or GPU compute. Actual time and memory depend on Gaussian count, bounds, backend, and device; the app reports measured stage timings and estimates grid memory without invented benchmarks.
+Use a recent Chromium, Firefox, or Safari with WebAssembly and WebGL2. Chromium, Playwright Firefox, and Playwright WebKit smoke tests run in the compatibility workflow. WebGPU acceleration depends on browser, OS, driver, and device limits; unsupported devices automatically use CPU/WASM. Conversion runs in a dedicated worker and does not require SharedArrayBuffer, COOP/COEP, CUDA, or GPU compute. The app reports measured bin/compute/readback timings without invented benchmarks.
 
 ## Architecture
 
@@ -152,12 +153,12 @@ React UI ─────────────── Three.js / Spark viewer
                  bindings               math + geometry + PLY export
 ```
 
-React/TypeScript owns controls and state. A module Web Worker owns decoding, activation, indexing, voxelization, extraction, cleanup, and transferable mesh buffers. PLY uses the independent parser/Rust session; Spark normalizes packed formats. `crates/mesh-core` contains browser-independent Rust math and exporters; `crates/mesh-wasm` exposes both PLY and activated-Gaussian session entry points. Three.js owns the disposable viewer lifecycle, while exporter modules produce local Blob downloads. See [docs/architecture.md](docs/architecture.md).
+React/TypeScript owns controls and state. A persistent module Worker decodes each source once, retains it for parameter changes, and returns at most 50,000 fallback-preview points. Spark normalizes packed formats. WebGPU uses bounded density chunks; CPU/WASM remains the fallback. `crates/mesh-core` contains browser-independent Rust math and exporters. Three.js owns the disposable viewer and crop-helper lifecycle. See [docs/architecture.md](docs/architecture.md).
 
 ## Roadmap
 
-- **v0.2 — scale:** faster bin construction, chunked/out-of-core scene conversion, improved WebGPU scheduling, and more packed-format fixtures.
-- **v0.3 — cleaner:** occupancy denoising, outside flood fill, narrow-band TSDF, more consistently closed meshes, decimation.
+- **v0.2 — scale:** flattened/streamed Gaussian storage, out-of-core input decoding, GPU-side bin construction, and adaptive mesh simplification.
+- **v0.3 — cleaner:** occupancy denoising, outside flood fill, narrow-band TSDF, and more consistently closed meshes.
 - **v0.4 — camera-aware:** COLMAP import, rendered depth fusion, optional texture baking, comparisons with GS2Mesh/GOF-style approaches.
 
 ## Related work and references

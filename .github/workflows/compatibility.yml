@@ -1,0 +1,59 @@
+name: Browser and format compatibility
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  browsers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo install wasm-pack --locked
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npm run test:e2e:browsers
+
+  formats:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo install wasm-pack --locked
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Build ephemeral SPZ, SOG, and download MIT KSPLAT fixture
+        run: |
+          node scripts/write-sample.mjs "$RUNNER_TEMP/sample.ply"
+          npx splat-transform --spz-version 3 -g cpu "$RUNNER_TEMP/sample.ply" "$RUNNER_TEMP/sample.spz"
+          npx splat-transform -g cpu "$RUNNER_TEMP/sample.ply" "$RUNNER_TEMP/sample.sog"
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/capybara.ksplat" https://media.githubusercontent.com/media/affromero/octoview/main/samples/capybara.ksplat
+      - name: Verify SPZ
+        run: npm run test:e2e -- formats.spec.ts
+        env:
+          REAL_SPLAT_INPUT: ${{ runner.temp }}/sample.spz
+      - name: Verify SOG
+        run: npm run test:e2e -- formats.spec.ts
+        env:
+          REAL_SPLAT_INPUT: ${{ runner.temp }}/sample.sog
+      - name: Verify KSPLAT
+        run: npm run test:e2e -- formats.spec.ts
+        env:
+          REAL_SPLAT_INPUT: ${{ runner.temp }}/capybara.ksplat

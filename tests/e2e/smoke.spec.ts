@@ -7,6 +7,10 @@ test("synthetic sample converts to an editable mesh", async ({ page }) => {
   await page.getByRole("button", { name: /Load deterministic sample/ }).click();
   await expect(page.getByText(/synthetic-sphere\.ply/)).toBeVisible();
   await page.getByRole("button", { name: /Fast/ }).click();
+  await page.getByText("Advanced settings").click();
+  await page.getByText("Enable crop box").click();
+  await page.getByLabel("Crop X minimum").fill("0.1");
+  await page.getByLabel("Crop X maximum").fill("0.9");
   await page.getByRole("button", { name: /Convert to mesh/ }).click();
   await expect(page.getByTestId("ready-state")).toBeVisible({
     timeout: 90_000,
@@ -23,6 +27,7 @@ test("synthetic sample converts to an editable mesh", async ({ page }) => {
   await expect(
     page.locator(".stat", { hasText: "Density backend" }).locator("strong"),
   ).not.toHaveText("—");
+  await expect(page.getByText("Boundary edges")).toBeVisible();
   await expect(
     page.getByRole("button", { name: /Download GLB/ }),
   ).toBeEnabled();

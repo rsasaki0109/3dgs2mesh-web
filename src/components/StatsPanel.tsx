@@ -1,5 +1,5 @@
 import { formatBytes } from "../conversion/params";
-import type { DensityStats, ParseReport } from "../types/model";
+import type { DensityStats, MeshQuality, ParseReport } from "../types/model";
 
 interface Props {
   fileSize: number;
@@ -12,6 +12,13 @@ interface Props {
   triangleCount?: number;
   elapsed?: Record<string, number>;
   backendUsed?: "webgpu" | "wasm";
+  backendTimings?: { indexing: number; compute: number; readback: number };
+  validation?: {
+    samples: number;
+    maxAbsError: number;
+    maxRelativeError: number;
+  };
+  quality?: MeshQuality;
 }
 const elapsedLabel = (ms?: number) =>
   ms === undefined
@@ -30,6 +37,9 @@ export function StatsPanel({
   triangleCount,
   elapsed,
   backendUsed,
+  backendTimings,
+  validation,
+  quality,
 }: Props) {
   return (
     <div className="stats-panel">
@@ -75,6 +85,22 @@ export function StatsPanel({
           label="Triangles"
           value={triangleCount?.toLocaleString() ?? "—"}
         />
+        <Stat
+          label="Boundary edges"
+          value={quality?.boundaryEdges.toLocaleString() ?? "—"}
+        />
+        <Stat
+          label="Non-manifold edges"
+          value={quality?.nonManifoldEdges.toLocaleString() ?? "—"}
+        />
+        <Stat
+          label="Components"
+          value={quality?.components.toLocaleString() ?? "—"}
+        />
+        <Stat
+          label="Degenerate faces"
+          value={quality?.degenerateFaces.toLocaleString() ?? "—"}
+        />
       </div>
       {elapsed && (
         <div className="elapsed-list">
@@ -87,6 +113,45 @@ export function StatsPanel({
           </small>
         </div>
       )}
+      {backendTimings && (
+        <div className="elapsed-list">
+          <span>WebGPU timings</span>
+          <small>
+            bins {elapsedLabel(backendTimings.indexing)} · compute{" "}
+            {elapsedLabel(backendTimings.compute)} · readback{" "}
+            {elapsedLabel(backendTimings.readback)}
+            {validation
+              ? ` · ${validation.samples} checks · max Δ ${validation.maxAbsError.toPrecision(2)}`
+              : ""}
+          </small>
+        </div>
+      )}
+      {quality &&
+        (quality.preDecimationVertices !== vertexCount ||
+          quality.preDecimationTriangles !== triangleCount) && (
+          <div className="elapsed-list">
+            <span>Decimation</span>
+            <small>
+              {quality.preDecimationVertices.toLocaleString()} →{" "}
+              {vertexCount?.toLocaleString()} vertices ·{" "}
+              {quality.preDecimationTriangles.toLocaleString()} →{" "}
+              {triangleCount?.toLocaleString()} triangles
+            </small>
+          </div>
+        )}
+      {quality &&
+        (quality.preCleanupVertices !== quality.preDecimationVertices ||
+          quality.preCleanupTriangles !== quality.preDecimationTriangles) && (
+          <div className="elapsed-list">
+            <span>Cleanup</span>
+            <small>
+              {quality.preCleanupVertices.toLocaleString()} →{" "}
+              {quality.preDecimationVertices.toLocaleString()} vertices ·{" "}
+              {quality.preCleanupTriangles.toLocaleString()} →{" "}
+              {quality.preDecimationTriangles.toLocaleString()} triangles
+            </small>
+          </div>
+        )}
     </div>
   );
 }

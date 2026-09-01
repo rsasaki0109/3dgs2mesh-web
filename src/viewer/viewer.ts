@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import type { Gaussian, MeshData } from "../types/model";
+import type { MeshData } from "../types/model";
 import { type SparkHandle, tryCreateSparkPreview } from "./sparkAdapter";
 
 export type ViewerMode = "splat" | "mesh" | "split";
@@ -34,6 +34,7 @@ export class SceneViewer {
   private meshObject?: THREE.Mesh;
   private pointsObject?: THREE.Points;
   private sparkHandle?: SparkHandle;
+  private cropHelper?: THREE.Box3Helper;
   private mode: ViewerMode = "mesh";
   private frame = 0;
   private resizeObserver: ResizeObserver;
@@ -127,8 +128,9 @@ export class SceneViewer {
 
   async setSplat(
     bytes: Uint8Array,
-    gaussians: Gaussian[],
-    filename = "scene.ply",
+    filename: string,
+    previewPositions: Float32Array,
+    previewColors: Float32Array,
   ) {
     if (this.sparkHandle) {
       this.sparkHandle.dispose();
@@ -147,18 +149,15 @@ export class SceneViewer {
       this.fitToObject();
       return { spark: true };
     } catch {
-      const positions = new Float32Array(gaussians.length * 3);
-      const colors = new Float32Array(gaussians.length * 3);
-      gaussians.forEach((gaussian, i) => {
-        positions.set(gaussian.mean, i * 3);
-        colors.set(gaussian.color, i * 3);
-      });
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute(
         "position",
-        new THREE.BufferAttribute(positions, 3),
+        new THREE.BufferAttribute(previewPositions, 3),
       );
-      geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+      geometry.setAttribute(
+        "color",
+        new THREE.BufferAttribute(previewColors, 3),
+      );
       const material = new THREE.PointsMaterial({
         size: 0.025,
         sizeAttenuation: true,
@@ -212,6 +211,30 @@ export class SceneViewer {
   setBackground(light: boolean) {
     this.scene.background = new THREE.Color(light ? "#e9edf4" : "#0a0e16");
   }
+  setCropBox(bounds?: {
+    min: [number, number, number];
+    max: [number, number, number];
+  }) {
+    if (this.cropHelper) {
+      this.scene.remove(this.cropHelper);
+      this.cropHelper.geometry.dispose();
+      if (Array.isArray(this.cropHelper.material))
+        this.cropHelper.material.forEach((material) => {
+          material.dispose();
+        });
+      else this.cropHelper.material.dispose();
+      this.cropHelper = undefined;
+    }
+    if (!bounds) return;
+    this.cropHelper = new THREE.Box3Helper(
+      new THREE.Box3(
+        new THREE.Vector3(...bounds.min),
+        new THREE.Vector3(...bounds.max),
+      ),
+      0x5eead4,
+    );
+    this.scene.add(this.cropHelper);
+  }
   fitToObject() {
     const box = new THREE.Box3();
     if (this.meshObject && this.meshGroup.visible)
@@ -251,6 +274,7 @@ export class SceneViewer {
     this.pointsObject = undefined;
     this.sparkHandle?.dispose();
     this.sparkHandle = undefined;
+    this.setCropBox();
   }
   dispose() {
     cancelAnimationFrame(this.frame);

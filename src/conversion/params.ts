@@ -13,11 +13,15 @@ export const DEFAULT_PARAMS: ConversionParams = {
   ...PRESETS.balanced,
   backend: "auto",
   boundsQuantile: 0.01,
+  cropEnabled: false,
+  cropMin: [0, 0, 0],
+  cropMax: [1, 1, 1],
   isoMode: "automatic",
   isoThreshold: 0.1,
   keepLargestComponent: true,
   minComponentFaces: 16,
   smoothingIterations: 1,
+  decimationRatio: 1,
 };
 
 export function paramsForPreset(

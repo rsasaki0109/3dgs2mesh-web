@@ -1,5 +1,6 @@
 import type {
   ConversionParams,
+  WorkerLoadedMessage,
   WorkerReadyMessage,
   WorkerResponse,
 } from "../types/model";
@@ -17,7 +18,7 @@ export class ConversionWorkerClient {
   private pending = new Map<
     number,
     {
-      resolve: (value: WorkerReadyMessage["result"]) => void;
+      resolve: (value: unknown) => void;
       reject: (reason: Error) => void;
       progress?: (event: ProgressEvent) => void;
     }
@@ -37,7 +38,7 @@ export class ConversionWorkerClient {
       const current = this.pending.get(response.id);
       if (!current) return;
       if (response.type === "progress") current.progress?.(response);
-      else if (response.type === "ready") {
+      else if (response.type === "ready" || response.type === "loaded") {
         this.pending.delete(response.id);
         current.resolve(response.result);
       } else {
@@ -54,18 +55,26 @@ export class ConversionWorkerClient {
     return worker;
   }
 
-  start(
-    bytes: ArrayBuffer,
-    filename: string,
-    params: ConversionParams,
-    progress?: (event: ProgressEvent) => void,
-  ) {
+  load(bytes: ArrayBuffer, filename: string) {
+    const id = ++this.sequence;
+    return new Promise<WorkerLoadedMessage["result"]>((resolve, reject) => {
+      this.pending.set(id, {
+        resolve: (value) => resolve(value as WorkerLoadedMessage["result"]),
+        reject,
+      });
+      this.worker.postMessage({ type: "load", id, bytes, filename }, [bytes]);
+    });
+  }
+
+  start(params: ConversionParams, progress?: (event: ProgressEvent) => void) {
     const id = ++this.sequence;
     return new Promise<WorkerReadyMessage["result"]>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, progress });
-      this.worker.postMessage({ type: "start", id, bytes, filename, params }, [
-        bytes,
-      ]);
+      this.pending.set(id, {
+        resolve: (value) => resolve(value as WorkerReadyMessage["result"]),
+        reject,
+        progress,
+      });
+      this.worker.postMessage({ type: "start", id, params });
     });
   }
 
@@ -76,7 +85,11 @@ export class ConversionWorkerClient {
   ) {
     const id = ++this.sequence;
     return new Promise<WorkerReadyMessage["result"]>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, progress });
+      this.pending.set(id, {
+        resolve: (value) => resolve(value as WorkerReadyMessage["result"]),
+        reject,
+        progress,
+      });
       this.worker.postMessage({ type: "extract", id, params, isoThreshold });
     });
   }

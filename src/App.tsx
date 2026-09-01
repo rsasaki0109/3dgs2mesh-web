@@ -5,7 +5,6 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { StatsPanel } from "./components/StatsPanel";
 import { friendlyError } from "./conversion/errors";
 import { DEFAULT_PARAMS, paramsForPreset } from "./conversion/params";
-import { decodeSplats } from "./conversion/splats";
 import { ConversionWorkerClient } from "./conversion/workerClient";
 import { meshToGlb } from "./exporters/glb";
 import { outputFilename } from "./exporters/names";
@@ -15,8 +14,8 @@ import type {
   ConversionParams,
   ConversionStage,
   DensityStats,
-  Gaussian,
   MeshData,
+  MeshQuality,
   ParseReport,
   PresetName,
 } from "./types/model";
@@ -28,7 +27,7 @@ interface Source {
   size: number;
   bytes: ArrayBuffer;
   report: ParseReport;
-  gaussians: Gaussian[];
+  bounds: { min: [number, number, number]; max: [number, number, number] };
 }
 interface Output {
   mesh: MeshData;
@@ -40,6 +39,17 @@ interface Output {
   isoThreshold: number;
   elapsed: Record<string, number>;
   backendUsed: "webgpu" | "wasm";
+  backendTimings?: {
+    indexing: number;
+    compute: number;
+    readback: number;
+  };
+  validation?: {
+    samples: number;
+    maxAbsError: number;
+    maxRelativeError: number;
+  };
+  quality: MeshQuality;
 }
 
 const LARGE_INPUT_BYTES = 100 * 1024 * 1024;
@@ -86,10 +96,13 @@ export default function App() {
       try {
         const data =
           bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-        const parsed = await decodeSplats(data, name, params.opacityThreshold);
+        worker.current?.dispose();
+        const client = new ConversionWorkerClient();
+        worker.current = client;
+        const inspected = await client.load(data.slice().buffer, name);
         const largeInput =
           size >= LARGE_INPUT_BYTES ||
-          parsed.report.inputCount >= LARGE_INPUT_GAUSSIANS;
+          inspected.report.inputCount >= LARGE_INPUT_GAUSSIANS;
         if (largeInput)
           setParams((current) => paramsForPreset("fast", current));
         const owned = data.slice().buffer as ArrayBuffer;
@@ -97,18 +110,19 @@ export default function App() {
           name,
           size,
           bytes: owned,
-          report: parsed.report,
-          gaussians: parsed.gaussians,
+          report: inspected.report,
+          bounds: inspected.bounds,
         });
         setStage("parsing");
         setPercent(0);
         setDetail(
-          `${parsed.report.retainedCount.toLocaleString()} Gaussians ready`,
+          `${inspected.report.retainedCount.toLocaleString()} Gaussians ready`,
         );
         const spark = await viewer.current?.setSplat(
           data,
-          parsed.gaussians,
           name,
+          inspected.previewPositions,
+          inspected.previewColors,
         );
         setSparkWarning(spark ? !spark.spark : false);
         viewer.current?.setMode("splat");
@@ -118,7 +132,7 @@ export default function App() {
         setError(friendlyError(caught));
       }
     },
-    [params.opacityThreshold],
+    [],
   );
   const chooseFile = useCallback(
     (file: File) => {
@@ -133,26 +147,42 @@ export default function App() {
     void loadBytes(bytes, "synthetic-sphere.ply", bytes.byteLength);
   }, [loadBytes]);
 
+  useEffect(() => {
+    if (!source || !params.cropEnabled) {
+      viewer.current?.setCropBox();
+      return;
+    }
+    const bounds = {
+      min: source.bounds.min.map(
+        (value, axis) =>
+          value + (source.bounds.max[axis] - value) * params.cropMin[axis],
+      ) as [number, number, number],
+      max: source.bounds.min.map(
+        (value, axis) =>
+          value + (source.bounds.max[axis] - value) * params.cropMax[axis],
+      ) as [number, number, number],
+    };
+    viewer.current?.setCropBox(bounds);
+  }, [params.cropEnabled, params.cropMax, params.cropMin, source]);
+
   const start = useCallback(async () => {
     if (!source || running) return;
-    worker.current?.dispose();
-    const client = new ConversionWorkerClient();
-    worker.current = client;
     setRunning(true);
     setError(undefined);
     setStage("parsing");
     setPercent(0);
     try {
-      const result = await client.start(
-        source.bytes.slice(0),
-        source.name,
-        params,
-        (event) => {
-          setStage(event.stage as ConversionStage);
-          setPercent(event.percent);
-          setDetail(event.detail);
-        },
-      );
+      let client = worker.current;
+      if (!client) {
+        client = new ConversionWorkerClient();
+        worker.current = client;
+        await client.load(source.bytes.slice(0), source.name);
+      }
+      const result = await client.start(params, (event) => {
+        setStage(event.stage as ConversionStage);
+        setPercent(event.percent);
+        setDetail(event.detail);
+      });
       setOutput(result);
       setSource((current) =>
         current ? { ...current, report: result.report } : current,
@@ -261,7 +291,7 @@ export default function App() {
       <main className="workspace">
         <aside className="control-column">
           <section className="intro">
-            <span className="eyebrow">BROWSER TOOL · v0.1.0</span>
+            <span className="eyebrow">BROWSER TOOL · v0.1.1</span>
             <h2>
               Turn splats into <em>editable geometry.</em>
             </h2>
@@ -296,6 +326,8 @@ export default function App() {
                   type="button"
                   onClick={() => {
                     viewer.current?.clear();
+                    worker.current?.dispose();
+                    worker.current = undefined;
                     setSource(undefined);
                     setOutput(undefined);
                   }}
@@ -556,6 +588,9 @@ export default function App() {
               }
               elapsed={output?.elapsed}
               backendUsed={output?.backendUsed}
+              backendTimings={output?.backendTimings}
+              validation={output?.validation}
+              quality={output?.quality}
             />
             <section className="export-card">
               <div className="section-heading">

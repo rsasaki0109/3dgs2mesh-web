@@ -14,6 +14,7 @@ export interface ParseReport {
   retainedCount: number;
   rejectedOpacity: number;
   rejectedNonFinite: number;
+  rejectedCrop?: number;
   warnings: string[];
   sourceFormat?: SplatFormat;
 }
@@ -29,11 +30,15 @@ export interface ConversionParams {
   opacityThreshold: number;
   sigmaRadius: number;
   boundsQuantile: number;
+  cropEnabled: boolean;
+  cropMin: Vec3;
+  cropMax: Vec3;
   isoMode: "automatic" | "manual";
   isoThreshold: number;
   keepLargestComponent: boolean;
   minComponentFaces: number;
   smoothingIterations: number;
+  decimationRatio: number;
 }
 
 export type PresetName = "fast" | "balanced" | "detailed";
@@ -53,6 +58,12 @@ export interface GridField {
   density: Float32Array;
   stats: DensityStats;
   index: SpatialIndex;
+  backendTimings?: { indexing: number; compute: number; readback: number };
+  validation?: {
+    samples: number;
+    maxAbsError: number;
+    maxRelativeError: number;
+  };
 }
 
 export interface SpatialIndex {
@@ -66,6 +77,17 @@ export interface MeshData {
   normals: Float32Array;
   colors: Float32Array;
   indices: Uint32Array;
+}
+
+export interface MeshQuality {
+  boundaryEdges: number;
+  nonManifoldEdges: number;
+  degenerateFaces: number;
+  components: number;
+  preDecimationVertices: number;
+  preDecimationTriangles: number;
+  preCleanupVertices: number;
+  preCleanupTriangles: number;
 }
 
 export interface ConversionResult {
@@ -89,9 +111,14 @@ export type ConversionStage =
 export interface WorkerStartMessage {
   type: "start";
   id: number;
+  params: ConversionParams;
+}
+
+export interface WorkerLoadMessage {
+  type: "load";
+  id: number;
   bytes: ArrayBuffer;
   filename: string;
-  params: ConversionParams;
 }
 
 export interface WorkerExtractMessage {
@@ -106,6 +133,7 @@ export interface WorkerCancelMessage {
 }
 
 export type WorkerRequest =
+  | WorkerLoadMessage
   | WorkerStartMessage
   | WorkerExtractMessage
   | WorkerCancelMessage;
@@ -132,6 +160,20 @@ export interface WorkerReadyMessage {
     isoThreshold: number;
     elapsed: Record<string, number>;
     backendUsed: "webgpu" | "wasm";
+    backendTimings?: GridField["backendTimings"];
+    validation?: GridField["validation"];
+    quality: MeshQuality;
+  };
+}
+
+export interface WorkerLoadedMessage {
+  type: "loaded";
+  id: number;
+  result: {
+    report: ParseReport;
+    previewPositions: Float32Array;
+    previewColors: Float32Array;
+    bounds: { min: Vec3; max: Vec3 };
   };
 }
 
@@ -142,6 +184,7 @@ export interface WorkerErrorMessage {
 }
 
 export type WorkerResponse =
+  | WorkerLoadedMessage
   | WorkerProgressMessage
   | WorkerReadyMessage
   | WorkerErrorMessage;

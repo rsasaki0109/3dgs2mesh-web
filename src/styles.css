@@ -413,6 +413,23 @@ a {
 .check-label input {
   accent-color: #6c9ff3;
 }
+.crop-axis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid #263a55;
+  border-radius: 5px;
+}
+.crop-axis legend {
+  padding: 0 4px;
+  color: #9bb0ce;
+  font-size: 10px;
+}
+.crop-axis:disabled {
+  opacity: 0.45;
+}
 .action-row {
   display: flex;
   flex-wrap: wrap;

@@ -34,5 +34,6 @@ export function reduceWorkerMessage(
       running: false,
       error: undefined,
     };
+  if (response.type === "loaded") return state;
   return { ...state, running: false, error: response.message };
 }

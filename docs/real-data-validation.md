@@ -22,6 +22,8 @@ For a real packed asset, set `REAL_SPLAT_INPUT` to an `.spz`, `.ksplat`, or pack
 REAL_SPLAT_INPUT=/absolute/path/to/asset.spz npm run test:e2e -- formats.spec.ts
 ```
 
+The weekly/manual `Browser and format compatibility` workflow generates ephemeral SPZ v3 and SOG files from the deterministic sample using MIT-licensed `@playcanvas/splat-transform`, and downloads the MIT-licensed Octoview capybara KSPLAT only for the duration of the job. It also runs the full synthetic conversion in Chromium, Firefox, and WebKit. No external fixture is committed or shipped to application users.
+
 The final argument selects all retained Gaussians, a center-quantile crop, or the most anisotropic five percent. The command emits one JSON line containing counts, scale-ratio quantiles, grid and density statistics, selected iso value, mesh counts, and measured stage times. Timings are diagnostics for the current machine, not project benchmarks.
 
 ## September 2026 validation

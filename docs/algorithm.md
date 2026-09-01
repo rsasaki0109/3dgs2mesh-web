@@ -1,6 +1,6 @@
 # Density-field reconstruction
 
-The v0.1 pipeline is deliberately an approximation designed for one local 3DGS asset. It accepts PLY, SPZ, SPLAT, KSPLAT, and packaged SOG; it does not use training cameras or source images.
+The v0.1 pipeline is deliberately an approximation designed for one local 3DGS asset. It accepts PLY, SPZ v3, SPLAT, KSPLAT, and packaged SOG; it does not use training cameras or source images.
 
 ## Input and activation
 
@@ -33,7 +33,7 @@ The result receives padding of at least one voxel. The grid preserves isotropic 
 
 ## WebGPU and CPU/WASM execution
 
-Both density backends evaluate the same truncated anisotropic sum and store one Float32 value per voxel. The WebGPU route flattens tile offsets and candidate indices into storage buffers, uploads each Gaussian as aligned vectors, and dispatches one invocation per voxel. It checks storage-buffer and dispatch limits before submission and reads the finished field back for meshing. The CPU/WASM route performs the same tiled loop in Rust. Floating-point accumulation can vary slightly between GPU and CPU, so identical topology is not guaranteed across backends.
+Both density backends evaluate the same truncated anisotropic sum and store one Float32 value per voxel. The WebGPU route flattens tile offsets and candidate indices, uploads each Gaussian as aligned vectors, and dispatches chunks of at most 1,048,576 invocations. It checks storage-buffer and dispatch limits, watches device loss, and separates indexing, compute/copy, and mapping timings. After readback, 32 deterministic samples are evaluated through the CPU candidate lists and Gaussian equation. A result fails when both absolute and relative tolerances are exceeded. The CPU/WASM route performs the same tiled loop in Rust. Floating-point accumulation may still produce small backend differences.
 
 ## Iso threshold and surface
 
@@ -45,6 +45,6 @@ Central finite differences estimate the density gradient. Since density grows to
 
 ## Cleanup and limits
 
-Triangle connectivity is computed through shared vertices. By default only the largest component remains; a minimum component face count is also available. Taubin's alternating positive/negative neighborhood passes provide conservative smoothing without the obvious shrinkage of a single Laplacian pass.
+Triangle connectivity is computed through shared vertices. By default only the largest component remains; a minimum component face count is also available. Taubin's alternating positive/negative neighborhood passes provide conservative smoothing. Optional deterministic vertex clustering averages positions and colors, removes duplicate/degenerate triangles and unreferenced vertices, then recomputes normals. The UI reports before/after cleanup and decimation counts plus boundary edges, non-manifold edges, degenerate faces, and connected components.
 
 This does not guarantee manifold or watertight geometry. Packed formats may introduce quantization error. Learned stereo depth, opacity fields from training views, TSDF fusion, textures, higher-order SH, and view-dependent appearance remain out of scope for v0.1.

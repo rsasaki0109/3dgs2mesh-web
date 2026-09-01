@@ -228,7 +228,12 @@ export function buildSpatialIndex(
   return { tileEdge: TILE_EDGE, tileDims, buckets };
 }
 
-function tileCandidates(index: SpatialIndex, x: number, y: number, z: number) {
+export function tileCandidates(
+  index: SpatialIndex,
+  x: number,
+  y: number,
+  z: number,
+) {
   const tx = Math.min(index.tileDims[0] - 1, Math.floor(x / index.tileEdge));
   const ty = Math.min(index.tileDims[1] - 1, Math.floor(y / index.tileEdge));
   const tz = Math.min(index.tileDims[2] - 1, Math.floor(z / index.tileEdge));
@@ -652,6 +657,150 @@ export function recomputeNormals(mesh: MeshData) {
     ]);
     mesh.normals.set(normal, i);
   }
+}
+
+/** Deterministic vertex-clustering decimation for interactive export sizing. */
+export function decimateMesh(mesh: MeshData, ratio: number): MeshData {
+  const vertexCount = mesh.positions.length / 3;
+  const target = Math.max(
+    4,
+    Math.floor(vertexCount * Math.max(0.05, Math.min(1, ratio))),
+  );
+  if (target >= vertexCount || mesh.indices.length < 6) return mesh;
+  const min: Vec3 = [Infinity, Infinity, Infinity];
+  const max: Vec3 = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < mesh.positions.length; i += 3)
+    for (let axis = 0; axis < 3; axis += 1) {
+      min[axis] = Math.min(min[axis], mesh.positions[i + axis]);
+      max[axis] = Math.max(max[axis], mesh.positions[i + axis]);
+    }
+  const cells = Math.max(2, Math.ceil(Math.cbrt(target * 2)));
+  const extent = sub(max, min).map((value) => Math.max(value, EPSILON)) as Vec3;
+  const clusters = new Map<string, number>();
+  const sums: number[][] = [];
+  const remap = new Uint32Array(vertexCount);
+  for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+    const base = vertex * 3;
+    const cell = [0, 1, 2].map((axis) =>
+      Math.min(
+        cells - 1,
+        Math.floor(
+          ((mesh.positions[base + axis] - min[axis]) / extent[axis]) * cells,
+        ),
+      ),
+    );
+    const key = cell.join(":");
+    let cluster = clusters.get(key);
+    if (cluster === undefined) {
+      cluster = sums.length;
+      clusters.set(key, cluster);
+      sums.push([0, 0, 0, 0, 0, 0, 0]);
+    }
+    remap[vertex] = cluster;
+    const sum = sums[cluster];
+    sum[0] += mesh.positions[base];
+    sum[1] += mesh.positions[base + 1];
+    sum[2] += mesh.positions[base + 2];
+    sum[3] += mesh.colors[base];
+    sum[4] += mesh.colors[base + 1];
+    sum[5] += mesh.colors[base + 2];
+    sum[6] += 1;
+  }
+  const positions = new Float32Array(sums.length * 3);
+  const colors = new Float32Array(sums.length * 3);
+  for (let i = 0; i < sums.length; i += 1) {
+    const count = sums[i][6];
+    positions.set(
+      sums[i].slice(0, 3).map((value) => value / count),
+      i * 3,
+    );
+    colors.set(
+      sums[i].slice(3, 6).map((value) => value / count),
+      i * 3,
+    );
+  }
+  const indices: number[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < mesh.indices.length; i += 3) {
+    const a = remap[mesh.indices[i]];
+    const b = remap[mesh.indices[i + 1]];
+    const c = remap[mesh.indices[i + 2]];
+    if (a === b || b === c || c === a) continue;
+    const key = [a, b, c].sort((left, right) => left - right).join(":");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    indices.push(a, b, c);
+  }
+  const result: MeshData = {
+    positions,
+    colors,
+    normals: new Float32Array(positions.length),
+    indices: new Uint32Array(indices),
+  };
+  recomputeNormals(result);
+  const compact = cleanupMesh(result, false, 1, 0);
+  recomputeNormals(compact);
+  return compact;
+}
+
+export function analyzeMesh(mesh: MeshData) {
+  const faceCount = mesh.indices.length / 3;
+  const edgeFaces = new Map<string, number[]>();
+  let degenerateFaces = 0;
+  for (let face = 0; face < faceCount; face += 1) {
+    const vertices = [
+      mesh.indices[face * 3],
+      mesh.indices[face * 3 + 1],
+      mesh.indices[face * 3 + 2],
+    ];
+    const points = vertices.map((vertex): Vec3 => {
+      const offset = vertex * 3;
+      return [
+        mesh.positions[offset],
+        mesh.positions[offset + 1],
+        mesh.positions[offset + 2],
+      ];
+    });
+    const areaNormal = cross(
+      sub(points[1], points[0]),
+      sub(points[2], points[0]),
+    );
+    if (
+      new Set(vertices).size < 3 ||
+      dot(areaNormal, areaNormal) < EPSILON * EPSILON
+    )
+      degenerateFaces += 1;
+    for (const [a, b] of [
+      [vertices[0], vertices[1]],
+      [vertices[1], vertices[2]],
+      [vertices[2], vertices[0]],
+    ]) {
+      const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+      const faces = edgeFaces.get(key) ?? [];
+      faces.push(face);
+      edgeFaces.set(key, faces);
+    }
+  }
+  const parent = Array.from({ length: faceCount }, (_, index) => index);
+  const find = (value: number): number => {
+    while (parent[value] !== value) {
+      parent[value] = parent[parent[value]];
+      value = parent[value];
+    }
+    return value;
+  };
+  for (const faces of edgeFaces.values())
+    for (let i = 1; i < faces.length; i += 1)
+      parent[find(faces[i])] = find(faces[0]);
+  return {
+    boundaryEdges: [...edgeFaces.values()].filter((faces) => faces.length === 1)
+      .length,
+    nonManifoldEdges: [...edgeFaces.values()].filter(
+      (faces) => faces.length > 2,
+    ).length,
+    degenerateFaces,
+    components: new Set(parent.map((_, index) => find(index))).size,
+  };
 }
 
 export function formatMemory(bytes: number) {

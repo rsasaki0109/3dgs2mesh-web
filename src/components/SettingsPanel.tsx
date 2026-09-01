@@ -106,6 +106,66 @@ export function SettingsPanel({ params, onChange, onPreset, disabled }: Props) {
               disabled={disabled}
             />
           </label>
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={params.cropEnabled}
+              onChange={(event) => set("cropEnabled", event.target.checked)}
+              disabled={disabled}
+            />{" "}
+            Enable crop box
+          </label>
+          {(["X", "Y", "Z"] as const).map((axis, index) => (
+            <fieldset
+              className="crop-axis"
+              key={axis}
+              disabled={disabled || !params.cropEnabled}
+            >
+              <legend>Crop {axis} range</legend>
+              <label>
+                Min <output>{Math.round(params.cropMin[index] * 100)}%</output>
+                <input
+                  aria-label={`Crop ${axis} minimum`}
+                  type="range"
+                  min="0"
+                  max="0.95"
+                  step="0.01"
+                  value={params.cropMin[index]}
+                  onChange={(event) => {
+                    const next = [
+                      ...params.cropMin,
+                    ] as ConversionParams["cropMin"];
+                    next[index] = Math.min(
+                      Number(event.target.value),
+                      params.cropMax[index] - 0.01,
+                    );
+                    set("cropMin", next);
+                  }}
+                />
+              </label>
+              <label>
+                Max <output>{Math.round(params.cropMax[index] * 100)}%</output>
+                <input
+                  aria-label={`Crop ${axis} maximum`}
+                  type="range"
+                  min="0.05"
+                  max="1"
+                  step="0.01"
+                  value={params.cropMax[index]}
+                  onChange={(event) => {
+                    const next = [
+                      ...params.cropMax,
+                    ] as ConversionParams["cropMax"];
+                    next[index] = Math.max(
+                      Number(event.target.value),
+                      params.cropMin[index] + 0.01,
+                    );
+                    set("cropMax", next);
+                  }}
+                />
+              </label>
+            </fieldset>
+          ))}
           <label>
             Iso mode
             <select
@@ -162,6 +222,21 @@ export function SettingsPanel({ params, onChange, onPreset, disabled }: Props) {
               value={params.smoothingIterations}
               onChange={(event) =>
                 set("smoothingIterations", Number(event.target.value))
+              }
+              disabled={disabled}
+            />
+          </label>
+          <label>
+            Mesh retention{" "}
+            <output>{Math.round(params.decimationRatio * 100)}%</output>
+            <input
+              type="range"
+              min="0.1"
+              max="1"
+              step="0.05"
+              value={params.decimationRatio}
+              onChange={(event) =>
+                set("decimationRatio", Number(event.target.value))
               }
               disabled={disabled}
             />

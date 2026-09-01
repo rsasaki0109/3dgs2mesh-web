@@ -17,6 +17,8 @@ pub struct ConversionSession {
     mesh: Option<Mesh>,
     iso: f32,
     input_count: usize,
+    raw_vertex_count: usize,
+    raw_triangle_count: usize,
 }
 
 #[wasm_bindgen]
@@ -52,6 +54,8 @@ impl ConversionSession {
             mesh: None,
             iso: 0.0,
             input_count,
+            raw_vertex_count: 0,
+            raw_triangle_count: 0,
         })
     }
 
@@ -110,6 +114,8 @@ impl ConversionSession {
             mesh: None,
             iso: 0.0,
             input_count,
+            raw_vertex_count: 0,
+            raw_triangle_count: 0,
         })
     }
 
@@ -160,6 +166,8 @@ impl ConversionSession {
             .as_ref()
             .ok_or_else(|| js_error("Voxelization has not run"))?;
         let raw = extract_mesh(f, &self.gaussians, self.iso, self.params.sigma_radius);
+        self.raw_vertex_count = raw.positions.len() / 3;
+        self.raw_triangle_count = raw.indices.len() / 3;
         self.mesh = Some(cleanup_mesh(
             raw,
             keep_largest,
@@ -194,6 +202,12 @@ impl ConversionSession {
     }
     pub fn triangle_count(&self) -> Result<usize, JsValue> {
         Ok(self.mesh_ref()?.indices.len() / 3)
+    }
+    pub fn raw_vertex_count(&self) -> usize {
+        self.raw_vertex_count
+    }
+    pub fn raw_triangle_count(&self) -> usize {
+        self.raw_triangle_count
     }
     pub fn grid_dimensions(&self) -> Result<Uint32Array, JsValue> {
         let f = self

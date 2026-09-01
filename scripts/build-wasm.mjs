@@ -1,14 +1,26 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { delimiter, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const out = resolve(root, "src/wasm");
 mkdirSync(out, { recursive: true });
+const cargoBin = join(
+  homedir(),
+  ".cargo",
+  "bin",
+  process.platform === "win32" ? "wasm-pack.exe" : "wasm-pack",
+);
+const wasmPack = existsSync(cargoBin) ? cargoBin : "wasm-pack";
+const env = {
+  ...process.env,
+  PATH: `${join(homedir(), ".cargo", "bin")}${delimiter}${process.env.PATH ?? ""}`,
+};
 
 execFileSync(
-  "wasm-pack",
+  wasmPack,
   [
     "build",
     "crates/mesh-wasm",
@@ -18,5 +30,5 @@ execFileSync(
     "--out-dir",
     resolve(root, "src/wasm"),
   ],
-  { cwd: root, stdio: "inherit" },
+  { cwd: root, env, stdio: "inherit" },
 );

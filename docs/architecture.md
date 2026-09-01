@@ -8,7 +8,7 @@ React UI ── worker client ── module Worker
                                 └─ Rust/WASM density + meshing
 ```
 
-The React application keeps the source `ArrayBuffer` locally, displays staged progress, and sends a transferable copy to `conversion.worker.ts`. The worker retains the density field after voxelization, so changing a manual iso threshold can rerun extraction and cleanup without reparsing or resampling. Cancellation terminates and recreates the worker.
+The React application keeps the source `ArrayBuffer` locally for preview and retry, while a persistent `conversion.worker.ts` decodes one transferable copy exactly once. The worker returns only metadata and a deterministic preview sample capped at 50,000 points, retains activated Gaussians for parameter changes, and retains the density field so manual iso changes rerun only extraction. Cancellation terminates the worker; a later conversion reloads the preserved UI copy.
 
 ## Input normalization
 
@@ -16,14 +16,14 @@ Graphdeco-style PLY is validated and activated by the project's independent pars
 
 ## Density backends
 
-The default `auto` backend first requests a WebGPU adapter. TypeScript builds deterministic 8×8×8 tile candidate lists, uploads flattened candidates and activated Gaussians, and dispatches one compute invocation per voxel. Only the Float32 density field is read back. Marching Tetrahedra, coloring, cleanup, and export remain on the CPU.
+The default `auto` backend first requests a WebGPU adapter. TypeScript builds deterministic 8×8×8 tile candidate lists and uploads flattened candidates and activated Gaussians. Density is dispatched and read back in chunks of at most 1,048,576 voxels, while the final Float32 field remains available for iso re-extraction. Thirty-two deterministic grid samples are recomputed with the CPU equation; excessive absolute and relative error rejects the GPU result. Marching Tetrahedra, coloring, cleanup, decimation, diagnostics, and export remain on the CPU.
 
-If WebGPU is missing, no adapter can be acquired, a device limit would be exceeded, or GPU setup fails, `auto` reports a warning and uses the single-threaded Rust/WASM session. The `webgpu` setting makes those failures actionable instead of falling back. Neither route needs WebAssembly threads, SharedArrayBuffer, COOP/COEP, CUDA, or a server.
+If WebGPU is missing, no adapter can be acquired, a buffer/dispatch limit is exceeded, the device is lost, validation fails, or setup fails, `auto` reports a warning and uses the single-threaded Rust/WASM session. The `webgpu` setting makes those failures actionable instead of falling back. Neither route needs WebAssembly threads, SharedArrayBuffer, COOP/COEP, CUDA, or a server.
 
 `src/conversion` contains input normalization, activation math, the deterministic spatial index, the WebGPU backend, TypeScript field/meshing support, and state helpers. `crates/mesh-core` contains browser-independent Rust math and exporters; `crates/mesh-wasm` provides a staged `ConversionSession` with PLY and activated-Gaussian constructors.
 
 ## Viewer, export, and deployment
 
-`SceneViewer` owns a single Three.js renderer, camera, controls, lights, grid, axes, and object groups. New geometries and materials are disposed before replacement; controls, resize observers, animation frames, renderer, and Spark resources are disposed on replacement or unmount. Spark preview failure falls back to colored Gaussian points without blocking conversion.
+`SceneViewer` owns a single Three.js renderer, camera, controls, lights, grid, axes, crop `Box3Helper`, and object groups. New geometries and materials are disposed before replacement; controls, helpers, resize observers, animation frames, renderer, and Spark resources are disposed on replacement or unmount. Spark preview failure falls back to the bounded colored point sample without blocking conversion.
 
 The GLB exporter uses Three.js's bundled `GLTFExporter`; PLY and OBJ are small independent local serializers. Downloads use short-lived Blob URLs. Vite uses `/` locally and derives `/3dgs2mesh-web/` from `GITHUB_REPOSITORY` in GitHub Actions. The Pages workflow builds release WASM and Vite, uploads `dist`, and deploys through the official Pages actions.

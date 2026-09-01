@@ -22,6 +22,8 @@ export class ConversionSession {
     mesh_positions(): Float32Array;
     metadata(): string;
     constructor(bytes: Uint8Array, resolution: number, opacity_threshold: number, sigma_radius: number, bounds_quantile: number);
+    raw_triangle_count(): number;
+    raw_vertex_count(): number;
     set_iso_threshold(iso: number): void;
     triangle_count(): number;
     vertex_count(): number;
@@ -48,6 +50,8 @@ export interface InitOutput {
     readonly conversionsession_mesh_positions: (a: number) => [number, number, number];
     readonly conversionsession_metadata: (a: number) => [number, number];
     readonly conversionsession_new: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+    readonly conversionsession_raw_triangle_count: (a: number) => number;
+    readonly conversionsession_raw_vertex_count: (a: number) => number;
     readonly conversionsession_set_iso_threshold: (a: number, b: number) => [number, number];
     readonly conversionsession_triangle_count: (a: number) => [number, number, number];
     readonly conversionsession_vertex_count: (a: number) => [number, number, number];

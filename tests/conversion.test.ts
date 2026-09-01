@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { create } from "webgpu";
 import {
+  analyzeMesh,
   buildSpatialIndex,
   cleanupMesh,
+  decimateMesh,
   densityStats,
   estimateGrid,
   extractMarchingTetrahedra,
@@ -17,6 +20,7 @@ import {
 } from "../src/conversion/params";
 import { parsePly } from "../src/conversion/ply";
 import { splatFormat } from "../src/conversion/splats";
+import { webGpuDensityShader } from "../src/conversion/webgpu";
 import { outputFilename } from "../src/exporters/names";
 import { createSyntheticSample } from "../src/samples/synthetic";
 import type { ConversionParams, Gaussian, MeshData } from "../src/types/model";
@@ -38,6 +42,24 @@ const lowParams: ConversionParams = {
 };
 
 describe("conversion primitives", () => {
+  it("compiles the WebGPU density shader with Dawn", async () => {
+    const adapter = await create([]).requestAdapter();
+    expect(adapter).not.toBeNull();
+    const device = await adapter?.requestDevice();
+    expect(device).toBeDefined();
+    if (!device) return;
+    const module = device.createShaderModule({ code: webGpuDensityShader });
+    const diagnostics = await module.getCompilationInfo();
+    expect(
+      diagnostics.messages
+        .filter((message) => message.type === "error")
+        .map(
+          (message) =>
+            `${message.lineNum}:${message.linePos} ${message.message}`,
+        ),
+    ).toEqual([]);
+    device.destroy();
+  });
   it("maps presets and formats memory estimates", () => {
     expect(paramsForPreset("fast").resolution).toBe(64);
     expect(DEFAULT_PARAMS.backend).toBe("auto");
@@ -116,6 +138,30 @@ describe("conversion primitives", () => {
       1,
     );
     expect([...mesh.positions].every(Number.isFinite)).toBe(true);
+  });
+  it("decimates deterministically and reports topology", () => {
+    const gaussian = simpleGaussian();
+    const original = cleanupMesh(
+      extractMarchingTetrahedra(
+        voxelize([gaussian], { ...lowParams, resolution: 28 }),
+        [gaussian],
+        0.15,
+        3,
+      ),
+      true,
+      1,
+      0,
+    );
+    const first = decimateMesh(original, 0.35);
+    const second = decimateMesh(original, 0.35);
+    expect(first.positions.length).toBeLessThan(original.positions.length);
+    expect([...first.indices]).toEqual([...second.indices]);
+    expect([...first.positions, ...first.normals].every(Number.isFinite)).toBe(
+      true,
+    );
+    const quality = analyzeMesh(first);
+    expect(quality.components).toBeGreaterThan(0);
+    expect(quality.degenerateFaces).toBe(0);
   });
 });
 

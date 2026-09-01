@@ -116,6 +116,10 @@ export async function decodeSplats(
     return { gaussians, report };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (format === "spz" && /gzip header/i.test(message))
+      throw new Error(
+        "Could not decode SPZ: this appears to be SPZ v4, which the current browser decoder cannot read. Export SPZ v3 or Graphdeco PLY instead.",
+      );
     throw new Error(`Could not decode ${format.toUpperCase()}: ${message}`);
   } finally {
     packed.dispose();
