@@ -73,7 +73,8 @@ impl ConversionSession {
         let input_count = data.len() / STRIDE;
         let threshold = opacity_threshold.clamp(0.0, 1.0);
         let mut gaussians = Vec::with_capacity(input_count);
-        for row in data.chunks_exact(STRIDE) {
+        for offset in (0..data.len()).step_by(STRIDE) {
+            let row = &data[offset..offset + STRIDE];
             if row.iter().any(|value| !value.is_finite()) || row[15] < threshold {
                 continue;
             }
