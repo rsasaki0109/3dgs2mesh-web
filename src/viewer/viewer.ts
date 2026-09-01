@@ -98,6 +98,7 @@ export class SceneViewer {
   }
 
   setMesh(mesh: MeshData) {
+    if (this.meshObject) this.meshGroup.remove(this.meshObject);
     disposeObject(this.meshObject);
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute(
@@ -124,7 +125,11 @@ export class SceneViewer {
     this.updateVisibility();
   }
 
-  async setSplat(bytes: Uint8Array, gaussians: Gaussian[]) {
+  async setSplat(
+    bytes: Uint8Array,
+    gaussians: Gaussian[],
+    filename = "scene.ply",
+  ) {
     if (this.sparkHandle) {
       this.sparkHandle.dispose();
       this.sparkHandle = undefined;
@@ -134,7 +139,11 @@ export class SceneViewer {
     while (this.splatGroup.children.length)
       this.splatGroup.remove(this.splatGroup.children[0]);
     try {
-      this.sparkHandle = await tryCreateSparkPreview(this.splatGroup, bytes);
+      this.sparkHandle = await tryCreateSparkPreview(
+        this.splatGroup,
+        bytes,
+        filename,
+      );
       this.fitToObject();
       return { spark: true };
     } catch {
@@ -209,6 +218,8 @@ export class SceneViewer {
       box.expandByObject(this.meshObject);
     if (this.pointsObject && this.splatGroup.visible)
       box.expandByObject(this.pointsObject);
+    if (this.sparkHandle?.object && this.splatGroup.visible)
+      box.expandByObject(this.sparkHandle.object);
     if (!box.isEmpty()) {
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
@@ -231,13 +242,21 @@ export class SceneViewer {
     this.camera.updateProjectionMatrix();
     this.controls.update();
   }
+  clear() {
+    if (this.meshObject) this.meshGroup.remove(this.meshObject);
+    disposeObject(this.meshObject);
+    this.meshObject = undefined;
+    if (this.pointsObject) this.splatGroup.remove(this.pointsObject);
+    disposeObject(this.pointsObject);
+    this.pointsObject = undefined;
+    this.sparkHandle?.dispose();
+    this.sparkHandle = undefined;
+  }
   dispose() {
     cancelAnimationFrame(this.frame);
     this.resizeObserver.disconnect();
     this.controls.dispose();
-    disposeObject(this.meshObject);
-    disposeObject(this.pointsObject);
-    this.sparkHandle?.dispose();
+    this.clear();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

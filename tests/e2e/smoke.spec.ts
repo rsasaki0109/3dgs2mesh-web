@@ -21,6 +21,9 @@ test("synthetic sample converts to an editable mesh", async ({ page }) => {
     page.locator(".stat", { hasText: "Triangles" }).locator("strong"),
   ).not.toHaveText("—");
   await expect(
+    page.locator(".stat", { hasText: "Density backend" }).locator("strong"),
+  ).not.toHaveText("—");
+  await expect(
     page.getByRole("button", { name: /Download GLB/ }),
   ).toBeEnabled();
   await expect(page.getByRole("button", { name: /Binary PLY/ })).toBeEnabled();

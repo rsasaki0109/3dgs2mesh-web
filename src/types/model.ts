@@ -1,4 +1,5 @@
 export type Vec3 = [number, number, number];
+export type SplatFormat = "ply" | "spz" | "splat" | "ksplat" | "sog";
 
 export interface Gaussian {
   mean: Vec3;
@@ -14,6 +15,7 @@ export interface ParseReport {
   rejectedOpacity: number;
   rejectedNonFinite: number;
   warnings: string[];
+  sourceFormat?: SplatFormat;
 }
 
 export interface ParsedPly {
@@ -22,6 +24,7 @@ export interface ParsedPly {
 }
 
 export interface ConversionParams {
+  backend: "auto" | "webgpu" | "wasm";
   resolution: number;
   opacityThreshold: number;
   sigmaRadius: number;
@@ -87,6 +90,7 @@ export interface WorkerStartMessage {
   type: "start";
   id: number;
   bytes: ArrayBuffer;
+  filename: string;
   params: ConversionParams;
 }
 
@@ -127,6 +131,7 @@ export interface WorkerReadyMessage {
     density: DensityStats;
     isoThreshold: number;
     elapsed: Record<string, number>;
+    backendUsed: "webgpu" | "wasm";
   };
 }
 

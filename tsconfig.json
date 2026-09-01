@@ -15,7 +15,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["vitest/globals", "node"]
+    "types": ["vitest/globals", "node", "@webgpu/types"]
   },
   "include": ["src", "tests", "vite.config.ts", "playwright.config.ts"]
 }

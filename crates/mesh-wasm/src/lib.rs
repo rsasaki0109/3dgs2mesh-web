@@ -1,7 +1,7 @@
 use js_sys::{Float32Array, Uint32Array, Uint8Array};
 use mesh_core::{
     automatic_iso, cleanup_mesh, extract_mesh, make_grid, mesh_to_ply, parse_ply, ConversionParams,
-    Gaussian, GridField, Mesh,
+    Gaussian, GridField, Mesh, Vec3,
 };
 use wasm_bindgen::prelude::*;
 
@@ -38,6 +38,63 @@ impl ConversionSession {
             .collect::<Vec<_>>();
         if gaussians.is_empty() {
             return Err(js_error("No Gaussians remain after the opacity threshold; lower the threshold or check the PLY."));
+        }
+        Ok(Self {
+            gaussians,
+            params: ConversionParams {
+                resolution: resolution.clamp(8, 256),
+                opacity_threshold: threshold,
+                sigma_radius: sigma_radius.clamp(0.5, 8.0),
+                bounds_quantile: bounds_quantile.clamp(0.0, 0.49),
+                ..Default::default()
+            },
+            field: None,
+            mesh: None,
+            iso: 0.0,
+            input_count,
+        })
+    }
+
+    /// Creates a session from activated Gaussian data decoded by a compatible
+    /// browser format loader. Each row contains mean(3), scale(3), a row-major
+    /// rotation matrix(9), opacity(1), and linear RGB(3).
+    #[wasm_bindgen(js_name = fromActivated)]
+    pub fn from_activated(
+        data: &[f32],
+        resolution: u32,
+        opacity_threshold: f32,
+        sigma_radius: f32,
+        bounds_quantile: f32,
+    ) -> Result<ConversionSession, JsValue> {
+        const STRIDE: usize = 19;
+        if data.is_empty() || !data.len().is_multiple_of(STRIDE) {
+            return Err(js_error("Activated Gaussian buffer has an invalid length"));
+        }
+        let input_count = data.len() / STRIDE;
+        let threshold = opacity_threshold.clamp(0.0, 1.0);
+        let mut gaussians = Vec::with_capacity(input_count);
+        for row in data.chunks_exact(STRIDE) {
+            if row.iter().any(|value| !value.is_finite()) || row[15] < threshold {
+                continue;
+            }
+            gaussians.push(Gaussian {
+                mean: Vec3::new(row[0], row[1], row[2]),
+                scale: Vec3::new(row[3].max(1.0e-6), row[4].max(1.0e-6), row[5].max(1.0e-6)),
+                rotation: row[6..15]
+                    .try_into()
+                    .map_err(|_| js_error("Invalid rotation matrix"))?,
+                opacity: row[15].clamp(0.0, 1.0),
+                color: [
+                    row[16].clamp(0.0, 1.0),
+                    row[17].clamp(0.0, 1.0),
+                    row[18].clamp(0.0, 1.0),
+                ],
+            });
+        }
+        if gaussians.is_empty() {
+            return Err(js_error(
+                "No Gaussians remain after decoding and opacity filtering",
+            ));
         }
         Ok(Self {
             gaussians,

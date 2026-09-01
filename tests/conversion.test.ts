@@ -16,6 +16,7 @@ import {
   paramsForPreset,
 } from "../src/conversion/params";
 import { parsePly } from "../src/conversion/ply";
+import { splatFormat } from "../src/conversion/splats";
 import { outputFilename } from "../src/exporters/names";
 import { createSyntheticSample } from "../src/samples/synthetic";
 import type { ConversionParams, Gaussian, MeshData } from "../src/types/model";
@@ -39,6 +40,7 @@ const lowParams: ConversionParams = {
 describe("conversion primitives", () => {
   it("maps presets and formats memory estimates", () => {
     expect(paramsForPreset("fast").resolution).toBe(64);
+    expect(DEFAULT_PARAMS.backend).toBe("auto");
     expect(paramsForPreset("detailed").resolution).toBe(160);
     expect(formatBytes(1024 ** 2)).toBe("1.0 MiB");
   });
@@ -55,6 +57,7 @@ describe("conversion primitives", () => {
       "my-scene-mesh.glb",
     );
     expect(outputFilename("asset.PLY", "ply")).toBe("asset-mesh.ply");
+    expect(outputFilename("asset.spz", "glb")).toBe("asset-mesh.glb");
   });
   it("has symmetric density for an identity Gaussian", () => {
     const g = simpleGaussian();
@@ -117,6 +120,14 @@ describe("conversion primitives", () => {
 });
 
 describe("PLY and sample", () => {
+  it("detects supported packed splat extensions", () => {
+    expect(splatFormat("scene.spz")).toBe("spz");
+    expect(splatFormat("scene.splat")).toBe("splat");
+    expect(splatFormat("scene.ksplat")).toBe("ksplat");
+    expect(splatFormat("scene.sog")).toBe("sog");
+    expect(splatFormat("scene.zip")).toBe("sog");
+    expect(() => splatFormat("scene.xyz")).toThrow(/Unsupported input format/);
+  });
   it("sample produces a surface at automatic iso", () => {
     const parsed = parsePly(createSyntheticSample());
     const field = voxelize(parsed.gaussians, lowParams);

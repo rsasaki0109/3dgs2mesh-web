@@ -5,15 +5,17 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { StatsPanel } from "./components/StatsPanel";
 import { friendlyError } from "./conversion/errors";
 import { DEFAULT_PARAMS, paramsForPreset } from "./conversion/params";
-import { parsePly } from "./conversion/ply";
+import { decodeSplats } from "./conversion/splats";
 import { ConversionWorkerClient } from "./conversion/workerClient";
 import { meshToGlb } from "./exporters/glb";
+import { outputFilename } from "./exporters/names";
 import { downloadBlob, meshToBinaryPly, meshToObj } from "./exporters/ply";
 import { createSyntheticSample } from "./samples/synthetic";
 import type {
   ConversionParams,
   ConversionStage,
   DensityStats,
+  Gaussian,
   MeshData,
   ParseReport,
   PresetName,
@@ -26,7 +28,7 @@ interface Source {
   size: number;
   bytes: ArrayBuffer;
   report: ParseReport;
-  gaussians: ReturnType<typeof parsePly>["gaussians"];
+  gaussians: Gaussian[];
 }
 interface Output {
   mesh: MeshData;
@@ -37,6 +39,7 @@ interface Output {
   density: DensityStats;
   isoThreshold: number;
   elapsed: Record<string, number>;
+  backendUsed: "webgpu" | "wasm";
 }
 
 const LARGE_INPUT_BYTES = 100 * 1024 * 1024;
@@ -83,7 +86,7 @@ export default function App() {
       try {
         const data =
           bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-        const parsed = parsePly(data, params.opacityThreshold);
+        const parsed = await decodeSplats(data, name, params.opacityThreshold);
         const largeInput =
           size >= LARGE_INPUT_BYTES ||
           parsed.report.inputCount >= LARGE_INPUT_GAUSSIANS;
@@ -102,7 +105,11 @@ export default function App() {
         setDetail(
           `${parsed.report.retainedCount.toLocaleString()} Gaussians ready`,
         );
-        const spark = await viewer.current?.setSplat(data, parsed.gaussians);
+        const spark = await viewer.current?.setSplat(
+          data,
+          parsed.gaussians,
+          name,
+        );
         setSparkWarning(spark ? !spark.spark : false);
         viewer.current?.setMode("splat");
         setMode("splat");
@@ -138,6 +145,7 @@ export default function App() {
     try {
       const result = await client.start(
         source.bytes.slice(0),
+        source.name,
         params,
         (event) => {
           setStage(event.stage as ConversionStage);
@@ -146,6 +154,9 @@ export default function App() {
         },
       );
       setOutput(result);
+      setSource((current) =>
+        current ? { ...current, report: result.report } : current,
+      );
       setStage("ready");
       setPercent(1);
       viewer.current?.setMesh(result.mesh);
@@ -197,7 +208,7 @@ export default function App() {
     try {
       downloadBlob(
         await meshToGlb(output.mesh),
-        `${source.name.replace(/\.ply$/i, "") || "scene"}-mesh.glb`,
+        outputFilename(source.name, "glb"),
       );
     } catch (caught) {
       setError(friendlyError(caught));
@@ -210,7 +221,7 @@ export default function App() {
         new Blob([bytes.buffer as ArrayBuffer], {
           type: "application/octet-stream",
         }),
-        `${source.name.replace(/\.ply$/i, "") || "scene"}-mesh.ply`,
+        outputFilename(source.name, "ply"),
       );
     }
   };
@@ -218,7 +229,7 @@ export default function App() {
     if (output && source)
       downloadBlob(
         new Blob([meshToObj(output.mesh)], { type: "text/plain" }),
-        `${source.name.replace(/\.ply$/i, "") || "scene"}-mesh.obj`,
+        outputFilename(source.name, "obj"),
       );
   };
 
@@ -255,7 +266,7 @@ export default function App() {
               Turn splats into <em>editable geometry.</em>
             </h2>
             <p>
-              Convert a standard 3D Gaussian Splatting PLY into a colored
+              Convert PLY, SPZ, SPLAT, KSPLAT, or packaged SOG into a colored
               triangle mesh on your device. No upload, CUDA, or native install.
             </p>
           </section>
@@ -271,7 +282,9 @@ export default function App() {
             />
             {source && (
               <div className="file-chip">
-                <span className="file-type">PLY</span>
+                <span className="file-type">
+                  {source.report.sourceFormat?.toUpperCase() ?? "3DGS"}
+                </span>
                 <div>
                   <strong>{source.name}</strong>
                   <small>
@@ -282,6 +295,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
+                    viewer.current?.clear();
                     setSource(undefined);
                     setOutput(undefined);
                   }}
@@ -336,8 +350,8 @@ export default function App() {
               )}
             </div>
             <p className="fine-print">
-              CPU/WASM processing can be memory-intensive. The grid is stored as
-              Float32 density values.
+              WebGPU accelerates density sampling when available; CPU/WASM is
+              the automatic fallback. The grid is stored as Float32 values.
             </p>
           </section>
           <ProgressPanel
@@ -385,7 +399,7 @@ export default function App() {
             <span className="lock">⌂</span>
             <p>
               <strong>Your file stays here.</strong> Nothing is sent to a
-              server. Object URLs are revoked when a new file is loaded.
+              server. Preview, conversion, and downloads all stay local.
             </p>
           </section>
         </aside>
@@ -502,7 +516,7 @@ export default function App() {
                 <>
                   <div className="empty-glyph">✦</div>
                   <h3>Your mesh workspace</h3>
-                  <p>Load a PLY or try the synthetic sphere to begin.</p>
+                  <p>Load a 3DGS asset or try the synthetic sphere to begin.</p>
                 </>
               )}
               {source && !output && (
@@ -541,6 +555,7 @@ export default function App() {
                   : undefined
               }
               elapsed={output?.elapsed}
+              backendUsed={output?.backendUsed}
             />
             <section className="export-card">
               <div className="section-heading">

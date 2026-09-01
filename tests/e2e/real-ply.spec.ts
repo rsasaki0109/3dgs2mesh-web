@@ -11,7 +11,7 @@ test("an opt-in real PLY converts through the browser worker", async ({
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/");
-  await page.getByLabel("Choose a PLY file").setInputFiles(realPly as string);
+  await page.getByLabel("Choose a 3DGS file").setInputFiles(realPly as string);
   await expect(page.getByText(/source Gaussians/)).toBeVisible({
     timeout: 60_000,
   });

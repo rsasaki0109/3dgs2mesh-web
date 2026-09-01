@@ -7,6 +7,12 @@ export class ConversionSession {
     density_stats(): string;
     extract_mesh(keep_largest: boolean, min_component_faces: number, smoothing_iterations: number): void;
     free(): void;
+    /**
+     * Creates a session from activated Gaussian data decoded by a compatible
+     * browser format loader. Each row contains mean(3), scale(3), a row-major
+     * rotation matrix(9), opacity(1), and linear RGB(3).
+     */
+    static fromActivated(data: Float32Array, resolution: number, opacity_threshold: number, sigma_radius: number, bounds_quantile: number): ConversionSession;
     grid_dimensions(): Uint32Array;
     grid_memory_bytes(): number;
     mesh_colors(): Float32Array;
@@ -32,6 +38,7 @@ export interface InitOutput {
     readonly conversionsession_density_stats: (a: number) => [number, number, number, number];
     readonly conversionsession_extract_mesh: (a: number, b: number, c: number, d: number) => [number, number];
     readonly conversionsession_free: (a: number) => void;
+    readonly conversionsession_fromActivated: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly conversionsession_grid_dimensions: (a: number) => [number, number, number];
     readonly conversionsession_grid_memory_bytes: (a: number) => [number, number, number];
     readonly conversionsession_mesh_colors: (a: number) => [number, number, number];

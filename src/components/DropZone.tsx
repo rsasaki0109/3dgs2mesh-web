@@ -25,18 +25,18 @@ export function DropZone({ onFile, onSample, disabled = false }: Props) {
         onDrop={drop}
       >
         <input
-          aria-label="Choose a PLY file"
+          aria-label="Choose a 3DGS file"
           type="file"
-          accept=".ply,application/octet-stream"
+          accept=".ply,.spz,.splat,.ksplat,.sog,.zip,application/octet-stream,application/zip"
           onChange={pick}
           disabled={disabled}
         />
         <span className="drop-icon">＋</span>
-        <span className="drop-title">Drop a 3DGS PLY here</span>
+        <span className="drop-title">Drop a 3DGS file here</span>
         <span className="drop-subtitle">
-          ASCII or binary little-endian · processed locally
+          PLY · SPZ · SPLAT · KSPLAT · SOG/ZIP · processed locally
         </span>
-        <span className="file-button">Choose PLY file</span>
+        <span className="file-button">Choose 3DGS file</span>
       </label>
       <button
         className="sample-button"

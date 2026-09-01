@@ -1,6 +1,6 @@
 # Real-data validation
 
-The automated test suite uses only the deterministic generated sample. Maintainers can also run the opt-in `inspect_real` example against local standard 3DGS PLY files; no fixture is copied into this repository.
+The automated test suite uses deterministic generated PLY and SPLAT samples. Maintainers can also run opt-in checks against local real assets; no fixture is copied into this repository.
 
 ```bash
 cargo run --release -p mesh-core --example inspect_real -- point_cloud.ply 48 crop
@@ -15,6 +15,12 @@ REAL_PLY=/absolute/path/to/point_cloud.ply npm run test:e2e
 ```
 
 On PowerShell, use `$env:REAL_PLY = 'C:\\absolute\\path\\point_cloud.ply'` before running `npm run test:e2e`.
+
+For a real packed asset, set `REAL_SPLAT_INPUT` to an `.spz`, `.ksplat`, or packaged `.sog`/`.zip` file. This opt-in browser check verifies local decoding and leaves the fixture outside the repository:
+
+```bash
+REAL_SPLAT_INPUT=/absolute/path/to/asset.spz npm run test:e2e -- formats.spec.ts
+```
 
 The final argument selects all retained Gaussians, a center-quantile crop, or the most anisotropic five percent. The command emits one JSON line containing counts, scale-ratio quantiles, grid and density statistics, selected iso value, mesh counts, and measured stage times. Timings are diagnostics for the current machine, not project benchmarks.
 

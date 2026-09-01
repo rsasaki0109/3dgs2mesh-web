@@ -9,20 +9,15 @@ export interface SparkHandle {
 export async function tryCreateSparkPreview(
   scene: THREE.Object3D,
   bytes: Uint8Array,
+  filename: string,
 ): Promise<SparkHandle> {
   const spark = await import("@sparkjsdev/spark");
-  const SplatMesh = (
-    spark as unknown as {
-      SplatMesh?: new (options?: Record<string, unknown>) => THREE.Object3D;
-    }
-  ).SplatMesh;
+  const SplatMesh = spark.SplatMesh;
   if (!SplatMesh) throw new Error("This Spark build does not expose SplatMesh");
   const copy = new Uint8Array(bytes.byteLength);
   copy.set(bytes);
-  const url = URL.createObjectURL(
-    new Blob([copy.buffer], { type: "application/octet-stream" }),
-  );
-  const object = new SplatMesh({ url });
+  const object = new SplatMesh({ fileBytes: copy, fileName: filename });
+  await object.initialized;
   scene.add(object);
   return {
     object,
@@ -40,7 +35,7 @@ export async function tryCreateSparkPreview(
           });
         else disposable.material?.dispose();
       });
-      URL.revokeObjectURL(url);
+      object.dispose();
     },
   };
 }

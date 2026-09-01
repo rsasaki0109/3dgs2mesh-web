@@ -56,13 +56,16 @@ export class ConversionWorkerClient {
 
   start(
     bytes: ArrayBuffer,
+    filename: string,
     params: ConversionParams,
     progress?: (event: ProgressEvent) => void,
   ) {
     const id = ++this.sequence;
     return new Promise<WorkerReadyMessage["result"]>((resolve, reject) => {
       this.pending.set(id, { resolve, reject, progress });
-      this.worker.postMessage({ type: "start", id, bytes, params }, [bytes]);
+      this.worker.postMessage({ type: "start", id, bytes, filename, params }, [
+        bytes,
+      ]);
     });
   }
 

@@ -33,6 +33,23 @@ export function SettingsPanel({ params, onChange, onPreset, disabled }: Props) {
         <summary>Advanced settings</summary>
         <div className="settings-grid">
           <label>
+            Density backend
+            <select
+              value={params.backend}
+              onChange={(event) =>
+                set(
+                  "backend",
+                  event.target.value as ConversionParams["backend"],
+                )
+              }
+              disabled={disabled}
+            >
+              <option value="auto">Auto (WebGPU preferred)</option>
+              <option value="webgpu">WebGPU required</option>
+              <option value="wasm">CPU / WASM</option>
+            </select>
+          </label>
+          <label>
             Grid resolution <output>{params.resolution}</output>
             <input
               type="range"

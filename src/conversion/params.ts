@@ -11,6 +11,7 @@ export const PRESETS: Record<
 
 export const DEFAULT_PARAMS: ConversionParams = {
   ...PRESETS.balanced,
+  backend: "auto",
   boundsQuantile: 0.01,
   isoMode: "automatic",
   isoThreshold: 0.1,

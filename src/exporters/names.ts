@@ -1,6 +1,6 @@
 export function outputStem(filename: string) {
   const base = filename.split(/[\\/]/).pop() ?? "scene.ply";
-  return base.replace(/\.ply$/i, "") || "scene";
+  return base.replace(/\.(ply|spz|splat|ksplat|sog|zip)$/i, "") || "scene";
 }
 export function outputFilename(
   filename: string,

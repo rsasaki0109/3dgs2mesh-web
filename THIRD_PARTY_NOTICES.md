@@ -6,7 +6,8 @@ The project code and original documentation are Apache-2.0.
 - Vite and `@vitejs/plugin-react` — MIT.
 - TypeScript — Apache-2.0.
 - Three.js and bundled examples such as `GLTFExporter` and `OrbitControls` — MIT.
-- `@sparkjsdev/spark` — MIT (optional local Gaussian Splat preview).
+- `@sparkjsdev/spark` — MIT (local packed-splat decoding and optional Gaussian Splat preview).
+- `@webgpu/types` — BSD-3-Clause (development-only WebGPU TypeScript declarations).
 - Rust `wasm-bindgen`, `js-sys`, and `console_error_panic_hook` — MIT/Apache-2.0 dual licenses.
 - Vitest, Playwright, Biome — MIT.
 

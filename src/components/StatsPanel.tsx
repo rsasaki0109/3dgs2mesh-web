@@ -11,6 +11,7 @@ interface Props {
   vertexCount?: number;
   triangleCount?: number;
   elapsed?: Record<string, number>;
+  backendUsed?: "webgpu" | "wasm";
 }
 const elapsedLabel = (ms?: number) =>
   ms === undefined
@@ -28,11 +29,22 @@ export function StatsPanel({
   vertexCount,
   triangleCount,
   elapsed,
+  backendUsed,
 }: Props) {
   return (
     <div className="stats-panel">
       <div className="stats-grid">
         <Stat label="Source file" value={formatBytes(fileSize)} />
+        <Stat
+          label="Density backend"
+          value={
+            backendUsed === "webgpu"
+              ? "WebGPU"
+              : backendUsed === "wasm"
+                ? "CPU / WASM"
+                : "—"
+          }
+        />
         <Stat
           label="Source Gaussians"
           value={report?.inputCount.toLocaleString() ?? "—"}
