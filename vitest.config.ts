@@ -7,5 +7,6 @@ export default defineConfig({
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     exclude: ["tests/e2e/**"],
     environment: "node",
+    pool: "threads",
   },
 });

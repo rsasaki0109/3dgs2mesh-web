@@ -1477,7 +1477,7 @@ mod tests {
         assert!(processed.density[0] < 0.0);
         let mesh = extract_mesh(&processed, &gs, 0.0, 3.0);
         let mut edges = HashMap::<(u32, u32), usize>::new();
-        for face in mesh.indices.chunks_exact(3) {
+        for face in mesh.indices.as_chunks::<3>().0 {
             for (a, b) in [(face[0], face[1]), (face[1], face[2]), (face[2], face[0])] {
                 let key = if a < b { (a, b) } else { (b, a) };
                 *edges.entry(key).or_default() += 1;
