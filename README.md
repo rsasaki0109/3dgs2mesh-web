@@ -30,9 +30,9 @@ Research pipelines such as GS2Mesh render stereo views and fuse learned depth, w
 
 ## See it in action
 
-<p align="center"><a href="https://rsasaki0109.github.io/3dgs2mesh-web/"><img src="docs/screenshot.png" alt="3DGS2Mesh Web conversion workspace" width="100%" /></a></p>
+<p align="center"><a href="https://rsasaki0109.github.io/3dgs2mesh-web/"><img src="docs/screenshot-v2.png" alt="3DGS2Mesh Web converting a real capybara Gaussian splat into an editable mesh" width="100%" /></a></p>
 
-<p align="center"><sub>Drop a splat asset, compare Original Splat / Generated Mesh / Split, then export locally.</sub></p>
+<p align="center"><sub>Actual v0.3 app output: a 261k-Gaussian Capybara KSPLAT in Split comparison mode, reconstructed locally at the Fast preset. Source fixture: <a href="https://github.com/affromero/octoview">Octoview</a> (MIT).</sub></p>
 
 ## From splat to mesh
 
