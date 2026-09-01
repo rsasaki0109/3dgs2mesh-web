@@ -342,6 +342,23 @@ export default function App() {
               <span>{error}</span>
             </div>
           )}
+          {source &&
+            (source.report.warnings.length > 0 ||
+              source.size >= 100 * 1024 * 1024) && (
+              <div className="warning-box" role="status">
+                <strong>Input inspection warning</strong>
+                {source.size >= 100 * 1024 * 1024 && (
+                  <span>
+                    This {formatFileSize(source.size)} source is large. Start
+                    with Fast; parsing, spatial bins, preview data, and mesh
+                    buffers require memory in addition to the density grid.
+                  </span>
+                )}
+                {source.report.warnings.map((warning) => (
+                  <span key={warning}>{warning}</span>
+                ))}
+              </div>
+            )}
           {sparkWarning && (
             <div className="warning-box">
               <strong>Splat preview fallback</strong>

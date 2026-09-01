@@ -42,6 +42,14 @@ describe("conversion primitives", () => {
     expect(paramsForPreset("detailed").resolution).toBe(160);
     expect(formatBytes(1024 ** 2)).toBe("1.0 MiB");
   });
+  it("selects a positive iso value for a sparse first histogram bin", () => {
+    const histogram = Array.from({ length: 32 }, (_, index) =>
+      index === 0 ? 100 : 0,
+    );
+    expect(
+      automaticIso({ min: 0, max: 1, nonZero: 100, histogram }),
+    ).toBeGreaterThan(0);
+  });
   it("creates descriptive output filenames", () => {
     expect(outputFilename("folder/my-scene.ply", "glb")).toBe(
       "my-scene-mesh.glb",

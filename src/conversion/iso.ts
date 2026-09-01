@@ -8,7 +8,7 @@ export function automaticIso(stats: DensityStats): number {
   for (let i = 0; i < stats.histogram.length; i += 1) {
     accumulated += stats.histogram[i];
     if (accumulated >= target)
-      return stats.min + range * (i / Math.max(1, stats.histogram.length - 1));
+      return stats.min + range * ((i + 0.5) / stats.histogram.length);
   }
   return stats.max * 0.2;
 }

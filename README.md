@@ -58,6 +58,8 @@ npm run check       # frontend checks plus Rust checks
 
 The development and production builds both compile and use the Rust/WASM core. Install the target with `rustup target add wasm32-unknown-unknown` and install `wasm-pack` before running the root commands.
 
+Maintainers can run the opt-in real-PLY diagnostic described in [docs/real-data-validation.md](docs/real-data-validation.md). External fixtures remain local and are never committed.
+
 ## How the algorithm works
 
 See [docs/algorithm.md](docs/algorithm.md) for equations. In short, the worker activates each Gaussian, rejects non-finite or weak splats, computes robust support bounds, bins support AABBs in a uniform grid, samples an anisotropic density field, selects a deterministic iso threshold, extracts a shared indexed surface with Marching Tetrahedra, then cleans and colors it.

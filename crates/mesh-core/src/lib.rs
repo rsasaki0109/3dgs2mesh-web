@@ -451,7 +451,10 @@ pub fn automatic_iso(stats: DensityStats) -> f32 {
     for (i, n) in stats.histogram.iter().enumerate() {
         acc += *n;
         if acc >= target {
-            return stats.min + range * (i as f32 / 31.0);
+            // Use the bin midpoint. Returning its lower edge makes the first
+            // bin select an iso value of zero for sparse real-world fields,
+            // which cannot produce an edge crossing against a zero exterior.
+            return stats.min + range * ((i as f32 + 0.5) / stats.histogram.len() as f32);
         }
     }
     stats.max * 0.2
@@ -1134,6 +1137,18 @@ mod tests {
         for n in m.normals {
             assert!(n.is_finite());
         }
+    }
+    #[test]
+    fn automatic_iso_is_positive_for_sparse_first_bin() {
+        let mut histogram = [0; 32];
+        histogram[0] = 100;
+        let iso = automatic_iso(DensityStats {
+            min: 0.0,
+            max: 1.0,
+            non_zero: 100,
+            histogram,
+        });
+        assert!(iso > 0.0 && iso < 1.0);
     }
     #[test]
     fn cleanup_components() {
