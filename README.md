@@ -1,34 +1,73 @@
-# 3DGS2Mesh Web
+<p align="center"><img src="docs/hero.svg" alt="3DGS2Mesh Web — Gaussian splats in, editable meshes out" width="100%" /></p>
 
-**Convert 3D Gaussian Splatting PLY files into editable meshes entirely in your browser. No upload, no CUDA.**
+<p align="center">
+  <a href="https://rsasaki0109.github.io/3dgs2mesh-web/"><strong>Open the live app</strong></a> ·
+  <a href="docs/algorithm.md">Algorithm</a> ·
+  <a href="docs/architecture.md">Architecture</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a>
+</p>
 
-[Live Demo](https://rsasaki0109.github.io/3dgs2mesh-web/) · [Repository](https://github.com/rsasaki0109/3dgs2mesh-web)
+<p align="center">
+  <a href="https://github.com/rsasaki0109/3dgs2mesh-web/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/rsasaki0109/3dgs2mesh-web/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="LICENSE"><img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-7aa2f7" /></a>
+  <img alt="Rust and WebAssembly" src="https://img.shields.io/badge/core-Rust_%2B_WASM-5eead4" />
+  <img alt="No backend" src="https://img.shields.io/badge/backend-none-9ece6a" />
+  <img alt="Version 0.1.0" src="https://img.shields.io/badge/version-0.1.0-bb9af7" />
+</p>
 
-![3DGS2Mesh Web conversion workspace](docs/screenshot.png)
+<p align="center"><strong>Convert standard 3D Gaussian Splatting PLY files into colored, editable triangle meshes—entirely inside your browser.</strong></p>
 
-3DGS2Mesh Web is a static, local-first OSS tool for small and medium object-centric 3D Gaussian Splatting assets. Drop a standard INRIA/Graphdeco PLY into the page, extract an approximate anisotropic density field, inspect the splat and mesh side by side, and download an editable GLB or binary PLY. Demo users need no installation; everything runs from GitHub Pages in the browser.
-
+> [!IMPORTANT]
 > This is an **approximate density-field reconstruction**, not an exact implementation of GS2Mesh, SuGaR, GOF, or FGGS-LiDAR. It does not promise research-grade geometric accuracy, manifoldness, or watertight output.
 
-![3DGS2Mesh Web application](docs/screenshot.png)
+## Why 3DGS2Mesh Web?
 
-## Why this exists
+| Private by design | Runs almost anywhere | Leaves you with a real mesh |
+| --- | --- | --- |
+| Your PLY stays on your device. No upload, account, analytics, or backend. | Static GitHub Pages app. No CUDA, Python, native install, or WASM threads. | Compare splat and mesh, clean components, smooth conservatively, then export GLB, PLY, or OBJ. |
 
-Research pipelines such as GS2Mesh render new stereo views and fuse learned depth, while GOF and related methods use training-time information. A single PLY in a static site cannot reproduce those methods faithfully. This project makes the practical, honest subset useful: deterministic anisotropic Gaussian density evaluation, spatial binning, Marching Tetrahedra, cleanup, and local export—with a polished viewer and no server.
+Research pipelines such as GS2Mesh render stereo views and fuse learned depth, while GOF and related methods use training-time information. A static app receiving only one PLY cannot reproduce those methods faithfully. This project focuses on the useful browser-native subset: anisotropic Gaussian density evaluation, spatial binning, deterministic iso-surface extraction, cleanup, and local export.
 
-## Features
+## See it in action
 
-- ASCII and binary little-endian standard 3DGS PLY parsing with arbitrary scalar property order.
-- Independent Rust geometry core compiled to WebAssembly and executed in a dedicated module worker.
-- CPU density field with oriented Gaussian support AABBs and deterministic 8×8×8 voxel tiles.
-- Fast, Balanced, and Detailed presets, memory estimates, progress, cancellation, and actionable validation errors.
-- Marching Tetrahedra extraction, finite-difference normals, static SH-DC vertex colors, component cleanup, and conservative Taubin smoothing.
-- Three.js viewer with Original Splat, Generated Mesh, and Split comparison modes; grid, axes, wireframe, shading, colors, background, fit, and camera reset controls.
-- Local GLB, binary PLY, and OBJ downloads. No analytics, account, backend, or network upload.
+<p align="center"><a href="https://rsasaki0109.github.io/3dgs2mesh-web/"><img src="docs/screenshot.png" alt="3DGS2Mesh Web conversion workspace" width="100%" /></a></p>
+
+<p align="center"><sub>Drop a PLY, compare Original Splat / Generated Mesh / Split, then export locally.</sub></p>
+
+## From splat to mesh
+
+```text
+Local 3DGS PLY
+      │
+      ▼
+Parse + activate ──► robust bounds ──► 8³ spatial bins
+                                            │
+                                            ▼
+GLB / PLY / OBJ ◄── cleanup + color ◄── density field
+                                            │
+                                            ▼
+                                  Marching Tetrahedra
+```
+
+All expensive work runs in a dedicated module Worker using a single-threaded Rust/WASM core, keeping the viewer and controls responsive.
+
+## Highlights
+
+| Area | What is included |
+| --- | --- |
+| **Input** | ASCII and binary little-endian 3DGS PLY, arbitrary scalar property order, actionable validation errors |
+| **Reconstruction** | Activated anisotropic Gaussians, robust bounds, oriented support AABBs, tiled CPU density field, deterministic automatic iso |
+| **Mesh** | Indexed Marching Tetrahedra, gradient normals, SH-DC colors, component filtering, conservative Taubin smoothing |
+| **Viewer** | Original / Mesh / Split modes, orbit controls, grid, axes, wireframe, shading, fit and reset |
+| **Export** | Colored indexed GLB, binary little-endian PLY, and OBJ generated with local Blob URLs |
+| **Safety** | Memory estimate, large-input warning, automatic Fast preset, progress, and cancellation by Worker termination |
 
 ## Privacy
 
 The selected file is read by the browser and passed to a dedicated worker. It is never uploaded. Download URLs are created locally and revoked after use. The optional Spark preview receives the same local object URL; if it cannot initialize, a lightweight point preview is used and conversion continues.
+
+> [!TIP]
+> Want to try the complete pipeline without finding a PLY first? Open the [live app](https://rsasaki0109.github.io/3dgs2mesh-web/) and choose **Load deterministic sample**.
 
 ## Supported input
 
@@ -66,7 +105,13 @@ See [docs/algorithm.md](docs/algorithm.md) for equations. In short, the worker a
 
 ## Parameter guide
 
-Fast uses a longest grid dimension near 64, Balanced near 96, and Detailed near 160. Higher resolution increases memory roughly with the number of voxels, not linearly with the displayed number. Sigma radius controls support (default 3); opacity threshold removes weak splats; bounds quantile trims center outliers from automatic bounds; iso can be automatic or manual; component filtering and conservative smoothing are optional. Expert resolutions up to 256 can be expensive and may be rejected before allocation.
+| Preset | Longest dimension | Best starting point |
+| --- | ---: | --- |
+| **Fast** | ~64 | Large scenes, first passes, constrained devices |
+| **Balanced** | ~96 | Default for small and medium object-centric assets |
+| **Detailed** | ~160 | High-detail runs after a successful lower-resolution pass |
+
+Higher resolution increases memory roughly with the number of voxels, not linearly with the displayed number. Sigma radius controls support (default 3); opacity threshold removes weak splats; bounds quantile trims center outliers from automatic bounds; iso can be automatic or manual; component filtering and conservative smoothing are optional. Expert resolutions up to 256 can be expensive and may be rejected before allocation. Inputs of at least 100 MiB or 500,000 source Gaussians select Fast automatically.
 
 ## Exports
 
@@ -86,13 +131,23 @@ Use a recent Chromium, Firefox, or Safari with WebAssembly and WebGL2. Conversio
 
 ## Architecture
 
+```text
+React UI ─────────────── Three.js / Spark viewer
+   │
+   └── module Worker
+          │
+          └── mesh-wasm ──► mesh-core
+                 thin        pure Rust
+                 bindings    math + geometry + PLY export
+```
+
 React/TypeScript owns controls and state. A module Web Worker owns parsing, activation, indexing, voxelization, extraction, cleanup, and transferable mesh buffers. `crates/mesh-core` contains browser-independent Rust math and exporters; `crates/mesh-wasm` exposes a staged binding. Three.js owns the disposable viewer lifecycle, while exporter modules produce local Blob downloads. See [docs/architecture.md](docs/architecture.md).
 
 ## Roadmap
 
-- **v0.2:** WebGPU density backend, faster/chunked conversion, SPZ/SOG/SPLAT/KSPLAT inputs.
-- **v0.3:** occupancy denoising, outside flood fill, narrow-band TSDF, more consistently closed meshes, decimation.
-- **v0.4:** camera-aware mode, COLMAP import, rendered depth fusion, optional texture baking, comparisons with GS2Mesh/GOF-style approaches.
+- **v0.2 — faster:** WebGPU density backend, faster/chunked conversion, SPZ/SOG/SPLAT/KSPLAT inputs.
+- **v0.3 — cleaner:** occupancy denoising, outside flood fill, narrow-band TSDF, more consistently closed meshes, decimation.
+- **v0.4 — camera-aware:** COLMAP import, rendered depth fusion, optional texture baking, comparisons with GS2Mesh/GOF-style approaches.
 
 ## Related work and references
 

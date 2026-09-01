@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="460" viewBox="0 0 1600 460" role="img" aria-labelledby="title desc">
+  <title id="title">3DGS2Mesh Web</title>
+  <desc id="desc">Gaussian splats transforming into a triangle mesh.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#070b12"/><stop offset=".55" stop-color="#0b1220"/><stop offset="1" stop-color="#101b30"/></linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#79aaff"/><stop offset="1" stop-color="#55e6c1"/></linearGradient>
+    <radialGradient id="splat"><stop stop-color="#8bb4ff" stop-opacity=".95"/><stop offset="1" stop-color="#3b82f6" stop-opacity="0"/></radialGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="10"/></filter>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#7da9ed" stroke-opacity=".06"/></pattern>
+    <clipPath id="round"><rect width="1600" height="460" rx="28"/></clipPath>
+  </defs>
+  <g clip-path="url(#round)">
+    <rect width="1600" height="460" fill="url(#bg)"/><rect width="1600" height="460" fill="url(#grid)"/>
+    <circle cx="1410" cy="60" r="280" fill="#2563eb" opacity=".08" filter="url(#glow)"/>
+    <circle cx="620" cy="430" r="240" fill="#14b8a6" opacity=".05" filter="url(#glow)"/>
+    <g transform="translate(70 64)">
+      <rect width="72" height="72" rx="20" fill="#152644" stroke="#659bf4" stroke-width="2"/>
+      <path d="M22 36h28M36 22v28" stroke="url(#accent)" stroke-width="4" stroke-linecap="round"/>
+      <text y="136" fill="#f4f7fc" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="56" font-weight="700">3DGS2Mesh <tspan fill="#82adff">Web</tspan></text>
+      <text y="188" fill="#9eb0cc" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="23">Gaussian splats in. Editable meshes out.</text>
+      <rect y="226" width="580" height="1" fill="#263a59"/>
+      <g transform="translate(0 270)" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="18" font-weight="600">
+        <rect width="152" height="44" rx="22" fill="#10253a" stroke="#2a665c"/><circle cx="24" cy="22" r="5" fill="#55e6c1"/><text x="40" y="28" fill="#a7f3df">NO UPLOAD</text>
+        <rect x="166" width="132" height="44" rx="22" fill="#13213a" stroke="#33578d"/><text x="189" y="28" fill="#b9d1fb">NO CUDA</text>
+        <rect x="312" width="238" height="44" rx="22" fill="#13213a" stroke="#33578d"/><text x="335" y="28" fill="#b9d1fb">RUST + WASM</text>
+      </g>
+    </g>
+    <g transform="translate(890 48)">
+      <g opacity=".95">
+        <ellipse cx="40" cy="105" rx="55" ry="25" fill="url(#splat)" transform="rotate(-22 40 105)"/><ellipse cx="105" cy="68" rx="43" ry="19" fill="url(#splat)" transform="rotate(35 105 68)"/>
+        <ellipse cx="125" cy="145" rx="60" ry="23" fill="url(#splat)" transform="rotate(-8 125 145)"/><ellipse cx="68" cy="205" rx="48" ry="21" fill="url(#splat)" transform="rotate(28 68 205)"/>
+        <ellipse cx="157" cy="232" rx="57" ry="24" fill="url(#splat)" transform="rotate(-32 157 232)"/><ellipse cx="115" cy="305" rx="45" ry="20" fill="url(#splat)" transform="rotate(14 115 305)"/>
+        <circle cx="28" cy="260" r="8" fill="#55e6c1" opacity=".65"/><circle cx="184" cy="105" r="6" fill="#82adff" opacity=".8"/>
+      </g>
+      <path d="M230 180h88" stroke="url(#accent)" stroke-width="3" stroke-linecap="round"/><path d="m300 166 18 14-18 14" fill="none" stroke="#55e6c1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <g transform="translate(345 16)" fill="none" stroke="#79aaff" stroke-width="1.7" stroke-linejoin="round">
+        <path d="M150 18 275 72l70 118-53 132-151 36L26 278 0 132Z" fill="#163057" fill-opacity=".28"/>
+        <path d="m150 18-25 98 61 70 89-114M0 132l125-16-99 162m99-162 16 242m-115-80 160-92 106 136M186 186l159 4m-204 168 151-36M186 186l-45 172m45-172 89-114m-89 114 106 136M125 116 0 132m125-16 25-98"/>
+        <g fill="#9fc0ff"><circle cx="150" cy="18" r="4"/><circle cx="275" cy="72" r="4"/><circle cx="292" cy="322" r="4"/><circle cx="26" cy="278" r="4"/></g>
+        <g fill="#55e6c1"><circle cx="345" cy="190" r="4"/><circle cx="141" cy="358" r="4"/><circle cy="132" r="4"/></g>
+        <circle cx="125" cy="116" r="4" fill="#d5e4ff"/><circle cx="186" cy="186" r="5" fill="#d5e4ff"/>
+      </g>
+    </g>
+    <rect x="1" y="1" width="1598" height="458" rx="27" fill="none" stroke="#263a59" stroke-width="2"/>
+  </g>
+</svg>

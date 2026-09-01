@@ -149,7 +149,9 @@ export default function App() {
       setStage("ready");
       setPercent(1);
       viewer.current?.setMesh(result.mesh);
-      viewer.current?.setMode(mode === "splat" ? "mesh" : mode);
+      const nextMode = mode === "splat" ? "mesh" : mode;
+      viewer.current?.setMode(nextMode);
+      setMode(nextMode);
     } catch (caught) {
       if (!/cancel/i.test(String(caught))) setError(friendlyError(caught));
     } finally {

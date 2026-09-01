@@ -12,6 +12,9 @@ test("synthetic sample converts to an editable mesh", async ({ page }) => {
     timeout: 90_000,
   });
   await expect(
+    page.getByRole("tab", { name: "Generated Mesh" }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
     page.locator(".stat", { hasText: "Mesh vertices" }).locator("strong"),
   ).not.toHaveText("—");
   await expect(
