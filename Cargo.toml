@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/mesh-core", "crates/mesh-wasm"]
+resolver = "2"

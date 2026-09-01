@@ -1,0 +1,724 @@
+import type {
+  ConversionParams,
+  DensityStats,
+  Gaussian,
+  GridField,
+  MeshData,
+  ParsedPly,
+  SpatialIndex,
+  Vec3,
+} from "../types/model";
+import { automaticIso } from "./iso";
+import { parsePly } from "./ply";
+
+const EPSILON = 1e-6;
+const TILE_EDGE = 8;
+
+export class ConversionCancelled extends Error {
+  constructor() {
+    super("Conversion cancelled");
+    this.name = "ConversionCancelled";
+  }
+}
+
+export interface EngineCallbacks {
+  onStage?: (stage: string, percent: number, detail?: string) => void;
+  shouldCancel?: () => boolean;
+}
+
+function checkCancelled(callbacks: EngineCallbacks) {
+  if (callbacks.shouldCancel?.()) throw new ConversionCancelled();
+}
+function add(a: Vec3, b: Vec3): Vec3 {
+  return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+}
+function sub(a: Vec3, b: Vec3): Vec3 {
+  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+}
+function mul(a: Vec3, scalar: number): Vec3 {
+  return [a[0] * scalar, a[1] * scalar, a[2] * scalar];
+}
+function dot(a: Vec3, b: Vec3) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+function cross(a: Vec3, b: Vec3): Vec3 {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+function normalize(a: Vec3): Vec3 {
+  const n = Math.sqrt(dot(a, a));
+  return Number.isFinite(n) && n > EPSILON ? mul(a, 1 / n) : [0, 0, 1];
+}
+export function supportHalfExtent(g: Gaussian, sigmaRadius: number): Vec3 {
+  const r = g.rotation;
+  return [
+    sigmaRadius *
+      (Math.abs(r[0]) * g.scale[0] +
+        Math.abs(r[1]) * g.scale[1] +
+        Math.abs(r[2]) * g.scale[2]),
+    sigmaRadius *
+      (Math.abs(r[3]) * g.scale[0] +
+        Math.abs(r[4]) * g.scale[1] +
+        Math.abs(r[5]) * g.scale[2]),
+    sigmaRadius *
+      (Math.abs(r[6]) * g.scale[0] +
+        Math.abs(r[7]) * g.scale[1] +
+        Math.abs(r[8]) * g.scale[2]),
+  ];
+}
+
+function quantile(values: number[], q: number) {
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  return (
+    sorted[Math.round((sorted.length - 1) * Math.max(0, Math.min(1, q)))] ?? 0
+  );
+}
+
+export function robustBounds(
+  gaussians: Gaussian[],
+  sigmaRadius: number,
+  q: number,
+): { min: Vec3; max: Vec3 } {
+  const minCenter: Vec3 = [
+    quantile(
+      gaussians.map((g) => g.mean[0]),
+      q,
+    ),
+    quantile(
+      gaussians.map((g) => g.mean[1]),
+      q,
+    ),
+    quantile(
+      gaussians.map((g) => g.mean[2]),
+      q,
+    ),
+  ];
+  const maxCenter: Vec3 = [
+    quantile(
+      gaussians.map((g) => g.mean[0]),
+      1 - q,
+    ),
+    quantile(
+      gaussians.map((g) => g.mean[1]),
+      1 - q,
+    ),
+    quantile(
+      gaussians.map((g) => g.mean[2]),
+      1 - q,
+    ),
+  ];
+  const min: Vec3 = [Infinity, Infinity, Infinity];
+  const max: Vec3 = [-Infinity, -Infinity, -Infinity];
+  const include = (p: Vec3) => {
+    for (let i = 0; i < 3; i += 1) {
+      min[i] = Math.min(min[i], p[i]);
+      max[i] = Math.max(max[i], p[i]);
+    }
+  };
+  for (const g of gaussians) {
+    if (
+      g.mean.every((value, i) => value >= minCenter[i] && value <= maxCenter[i])
+    ) {
+      const h = supportHalfExtent(g, sigmaRadius);
+      include(sub(g.mean, h));
+      include(add(g.mean, h));
+    }
+  }
+  if (!min.every(Number.isFinite) || !max.every(Number.isFinite))
+    for (const g of gaussians) {
+      const h = supportHalfExtent(g, sigmaRadius);
+      include(sub(g.mean, h));
+      include(add(g.mean, h));
+    }
+  const extent = sub(max, min);
+  const pad = extent.map((value) => Math.max(EPSILON, value * 0.01)) as Vec3;
+  return { min: sub(min, pad), max: add(max, pad) };
+}
+
+export function estimateGrid(gaussians: Gaussian[], params: ConversionParams) {
+  const bounds = robustBounds(
+    gaussians,
+    params.sigmaRadius,
+    params.boundsQuantile,
+  );
+  const extent = sub(bounds.max, bounds.min);
+  const longest = Math.max(...extent, EPSILON);
+  const spacing = longest / Math.max(8, Math.min(256, params.resolution));
+  const dims: [number, number, number] = extent.map((value) =>
+    Math.min(512, Math.ceil(value / spacing) + 1),
+  ) as [number, number, number];
+  const voxels = dims[0] * dims[1] * dims[2];
+  return {
+    bounds,
+    spacing,
+    dims,
+    voxels,
+    bytes: voxels * Float32Array.BYTES_PER_ELEMENT,
+  };
+}
+
+export function gaussianDensity(g: Gaussian, p: Vec3, sigmaRadius: number) {
+  const d = sub(p, g.mean);
+  const r = g.rotation;
+  const u: Vec3 = [
+    r[0] * d[0] + r[3] * d[1] + r[6] * d[2],
+    r[1] * d[0] + r[4] * d[1] + r[7] * d[2],
+    r[2] * d[0] + r[5] * d[1] + r[8] * d[2],
+  ];
+  const d2 =
+    (u[0] / g.scale[0]) ** 2 +
+    (u[1] / g.scale[1]) ** 2 +
+    (u[2] / g.scale[2]) ** 2;
+  return d2 <= sigmaRadius ** 2 ? g.opacity * Math.exp(-0.5 * d2) : 0;
+}
+
+export function buildSpatialIndex(
+  gaussians: Gaussian[],
+  bounds: { min: Vec3; max: Vec3 },
+  spacing: number,
+  dims: [number, number, number],
+  sigmaRadius: number,
+): SpatialIndex {
+  const tileDims: [number, number, number] = [
+    Math.ceil(dims[0] / TILE_EDGE),
+    Math.ceil(dims[1] / TILE_EDGE),
+    Math.ceil(dims[2] / TILE_EDGE),
+  ];
+  const buckets = Array.from(
+    { length: tileDims[0] * tileDims[1] * tileDims[2] },
+    () => [] as number[],
+  );
+  const tileId = (x: number, y: number, z: number) =>
+    (z * tileDims[1] + y) * tileDims[0] + x;
+  for (let index = 0; index < gaussians.length; index += 1) {
+    const g = gaussians[index];
+    const half = supportHalfExtent(g, sigmaRadius);
+    const lo = sub(g.mean, half);
+    const hi = add(g.mean, half);
+    const toTile = (value: number, axis: number, ceil = false) =>
+      Math.max(
+        0,
+        Math.min(
+          tileDims[axis] - 1,
+          Math.floor(
+            ((value - bounds.min[axis]) / spacing + (ceil ? 0.999999 : 0)) /
+              TILE_EDGE,
+          ),
+        ),
+      );
+    const low = [toTile(lo[0], 0), toTile(lo[1], 1), toTile(lo[2], 2)];
+    const high = [
+      toTile(hi[0], 0, true),
+      toTile(hi[1], 1, true),
+      toTile(hi[2], 2, true),
+    ];
+    for (let z = low[2]; z <= high[2]; z += 1)
+      for (let y = low[1]; y <= high[1]; y += 1)
+        for (let x = low[0]; x <= high[0]; x += 1)
+          buckets[tileId(x, y, z)].push(index);
+  }
+  for (const bucket of buckets) {
+    bucket.sort((a, b) => a - b);
+    for (let i = bucket.length - 1; i > 0; i -= 1)
+      if (bucket[i] === bucket[i - 1]) bucket.splice(i, 1);
+  }
+  return { tileEdge: TILE_EDGE, tileDims, buckets };
+}
+
+function tileCandidates(index: SpatialIndex, x: number, y: number, z: number) {
+  const tx = Math.min(index.tileDims[0] - 1, Math.floor(x / index.tileEdge));
+  const ty = Math.min(index.tileDims[1] - 1, Math.floor(y / index.tileEdge));
+  const tz = Math.min(index.tileDims[2] - 1, Math.floor(z / index.tileEdge));
+  return (
+    index.buckets[(tz * index.tileDims[1] + ty) * index.tileDims[0] + tx] ?? []
+  );
+}
+
+export function densityStats(density: Float32Array): DensityStats {
+  let min = Infinity;
+  let max = 0;
+  let nonZero = 0;
+  for (const value of density) {
+    min = Math.min(min, value);
+    max = Math.max(max, value);
+    if (value > 0) nonZero += 1;
+  }
+  if (!Number.isFinite(min)) min = 0;
+  const histogram = Array.from({ length: 32 }, () => 0);
+  const range = Math.max(EPSILON, max - min);
+  for (const value of density)
+    if (value > 0)
+      histogram[
+        Math.max(0, Math.min(31, Math.floor(((value - min) / range) * 31)))
+      ] += 1;
+  return { min, max, nonZero, histogram };
+}
+
+export function voxelize(
+  gaussians: Gaussian[],
+  params: ConversionParams,
+  callbacks: EngineCallbacks = {},
+): GridField {
+  const estimate = estimateGrid(gaussians, params);
+  if (estimate.bytes > 640 * 1024 * 1024)
+    throw new Error(
+      `This grid would allocate ${formatMemory(estimate.bytes)}. Lower the resolution or crop the scene before converting.`,
+    );
+  callbacks.onStage?.("indexing", 0, "Building deterministic spatial bins");
+  const index = buildSpatialIndex(
+    gaussians,
+    estimate.bounds,
+    estimate.spacing,
+    estimate.dims,
+    params.sigmaRadius,
+  );
+  callbacks.onStage?.(
+    "indexing",
+    1,
+    `${index.buckets.length.toLocaleString()} tiles`,
+  );
+  const density = new Float32Array(estimate.voxels);
+  const [nx, ny, nz] = estimate.dims;
+  for (let z = 0; z < nz; z += 1) {
+    checkCancelled(callbacks);
+    for (let y = 0; y < ny; y += 1)
+      for (let x = 0; x < nx; x += 1) {
+        const p: Vec3 = [
+          estimate.bounds.min[0] + x * estimate.spacing,
+          estimate.bounds.min[1] + y * estimate.spacing,
+          estimate.bounds.min[2] + z * estimate.spacing,
+        ];
+        let value = 0;
+        for (const candidate of tileCandidates(index, x, y, z))
+          value += gaussianDensity(gaussians[candidate], p, params.sigmaRadius);
+        density[(z * ny + y) * nx + x] = value;
+      }
+    callbacks.onStage?.("voxelizing", (z + 1) / nz, `slice ${z + 1}/${nz}`);
+  }
+  return {
+    dims: estimate.dims,
+    min: estimate.bounds.min,
+    max: estimate.bounds.max,
+    spacing: estimate.spacing,
+    density,
+    stats: densityStats(density),
+    index,
+  };
+}
+
+function gridIndex(
+  dims: [number, number, number],
+  x: number,
+  y: number,
+  z: number,
+) {
+  return (z * dims[1] + y) * dims[0] + x;
+}
+function gridPosition(field: GridField, x: number, y: number, z: number): Vec3 {
+  return [
+    field.min[0] + x * field.spacing,
+    field.min[1] + y * field.spacing,
+    field.min[2] + z * field.spacing,
+  ];
+}
+function fieldGradient(
+  field: GridField,
+  x: number,
+  y: number,
+  z: number,
+): Vec3 {
+  const [nx, ny, nz] = field.dims;
+  const xm = Math.max(0, x - 1);
+  const xp = Math.min(nx - 1, x + 1);
+  const ym = Math.max(0, y - 1);
+  const yp = Math.min(ny - 1, y + 1);
+  const zm = Math.max(0, z - 1);
+  const zp = Math.min(nz - 1, z + 1);
+  return [
+    (field.density[gridIndex(field.dims, xp, y, z)] -
+      field.density[gridIndex(field.dims, xm, y, z)]) /
+      (Math.max(1, xp - xm) * field.spacing),
+    (field.density[gridIndex(field.dims, x, yp, z)] -
+      field.density[gridIndex(field.dims, x, ym, z)]) /
+      (Math.max(1, yp - ym) * field.spacing),
+    (field.density[gridIndex(field.dims, x, y, zp)] -
+      field.density[gridIndex(field.dims, x, y, zm)]) /
+      (Math.max(1, zp - zm) * field.spacing),
+  ];
+}
+
+function colorAt(
+  field: GridField,
+  gaussians: Gaussian[],
+  p: Vec3,
+  sigmaRadius: number,
+) {
+  const coord = [0, 1, 2].map((axis) =>
+    Math.max(0, Math.floor((p[axis] - field.min[axis]) / field.spacing)),
+  );
+  const candidates = tileCandidates(field.index, coord[0], coord[1], coord[2]);
+  let weight = 0;
+  const color = [0, 0, 0];
+  for (const i of candidates) {
+    const contribution = gaussianDensity(gaussians[i], p, sigmaRadius);
+    weight += contribution;
+    color[0] += contribution * gaussians[i].color[0];
+    color[1] += contribution * gaussians[i].color[1];
+    color[2] += contribution * gaussians[i].color[2];
+  }
+  return weight > EPSILON
+    ? (color.map((value) => value / weight) as [number, number, number])
+    : [0.55, 0.58, 0.62];
+}
+
+export function extractMarchingTetrahedra(
+  field: GridField,
+  gaussians: Gaussian[],
+  iso: number,
+  sigmaRadius: number,
+  callbacks: EngineCallbacks = {},
+): MeshData {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const colors: number[] = [];
+  const indices: number[] = [];
+  const edgeVertices = new Map<string, number>();
+  const offsets: [number, number, number][] = [
+    [0, 0, 0],
+    [1, 0, 0],
+    [1, 1, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+    [1, 0, 1],
+    [1, 1, 1],
+    [0, 1, 1],
+  ];
+  const tetrahedra = [
+    [0, 5, 1, 6],
+    [0, 1, 2, 6],
+    [0, 2, 3, 6],
+    [0, 3, 7, 6],
+    [0, 7, 4, 6],
+    [0, 4, 5, 6],
+  ];
+  const [nx, ny, nz] = field.dims;
+  const getEdgeVertex = (
+    a: [number, number, number],
+    b: [number, number, number],
+    pa: Vec3,
+    pb: Vec3,
+    va: number,
+    vb: number,
+    ga: Vec3,
+    gb: Vec3,
+  ) => {
+    const ia = gridIndex(field.dims, ...a);
+    const ib = gridIndex(field.dims, ...b);
+    const key = ia < ib ? `${ia}:${ib}` : `${ib}:${ia}`;
+    const existing = edgeVertices.get(key);
+    if (existing !== undefined) return existing;
+    const t =
+      Math.abs(vb - va) > EPSILON
+        ? Math.max(0, Math.min(1, (iso - va) / (vb - va)))
+        : 0.5;
+    const p = add(pa, mul(sub(pb, pa), t));
+    const normal = normalize(mul(add(ga, mul(sub(gb, ga), t)), -1));
+    const color = colorAt(field, gaussians, p, sigmaRadius);
+    const vertex = positions.length / 3;
+    positions.push(...p);
+    normals.push(...normal);
+    colors.push(...color);
+    edgeVertices.set(key, vertex);
+    return vertex;
+  };
+  for (let z = 0; z < nz - 1; z += 1) {
+    checkCancelled(callbacks);
+    for (let y = 0; y < ny - 1; y += 1)
+      for (let x = 0; x < nx - 1; x += 1) {
+        const points = offsets.map(([dx, dy, dz]) =>
+          gridPosition(field, x + dx, y + dy, z + dz),
+        );
+        const values = offsets.map(
+          ([dx, dy, dz]) =>
+            field.density[gridIndex(field.dims, x + dx, y + dy, z + dz)],
+        );
+        const gradients = offsets.map(([dx, dy, dz]) =>
+          fieldGradient(field, x + dx, y + dy, z + dz),
+        );
+        for (const tetra of tetrahedra) {
+          const inside = tetra.map((i) => values[i] >= iso);
+          const count = inside.filter(Boolean).length;
+          if (count === 0 || count === 4) continue;
+          const crossing: [number, number][] = [];
+          for (let a = 0; a < 4; a += 1)
+            for (let b = a + 1; b < 4; b += 1)
+              if (inside[a] !== inside[b]) crossing.push([tetra[a], tetra[b]]);
+          const vertices = crossing.map(([a, b]) =>
+            getEdgeVertex(
+              [x + offsets[a][0], y + offsets[a][1], z + offsets[a][2]],
+              [x + offsets[b][0], y + offsets[b][1], z + offsets[b][2]],
+              points[a],
+              points[b],
+              values[a],
+              values[b],
+              gradients[a],
+              gradients[b],
+            ),
+          );
+          if (vertices.length === 3) indices.push(...vertices);
+          else if (vertices.length === 4)
+            indices.push(
+              vertices[0],
+              vertices[1],
+              vertices[2],
+              vertices[0],
+              vertices[2],
+              vertices[3],
+            );
+        }
+      }
+    callbacks.onStage?.("extracting", (z + 1) / Math.max(1, nz - 1));
+  }
+  const mesh = {
+    positions: new Float32Array(positions),
+    normals: new Float32Array(normals),
+    colors: new Float32Array(colors),
+    indices: new Uint32Array(indices),
+  };
+  recomputeNormals(mesh);
+  return mesh;
+}
+
+export function cleanupMesh(
+  mesh: MeshData,
+  keepLargest: boolean,
+  minComponentFaces: number,
+  smoothingIterations: number,
+): MeshData {
+  const faceCount = Math.floor(mesh.indices.length / 3);
+  if (!faceCount) return mesh;
+  const byVertex = Array.from(
+    { length: mesh.positions.length / 3 },
+    () => [] as number[],
+  );
+  for (let f = 0; f < faceCount; f += 1)
+    for (let j = 0; j < 3; j += 1) byVertex[mesh.indices[f * 3 + j]].push(f);
+  const adjacency = Array.from({ length: faceCount }, () => new Set<number>());
+  for (const faces of byVertex)
+    for (const a of faces)
+      for (const b of faces) if (a !== b) adjacency[a].add(b);
+  const component = Array.from({ length: faceCount }, () => -1);
+  const sizes: number[] = [];
+  for (let start = 0; start < faceCount; start += 1) {
+    if (component[start] >= 0) continue;
+    const stack = [start];
+    component[start] = sizes.length;
+    let size = 0;
+    while (stack.length) {
+      const face = stack.pop();
+      if (face === undefined) continue;
+      size += 1;
+      for (const next of adjacency[face])
+        if (component[next] < 0) {
+          component[next] = component[start];
+          stack.push(next);
+        }
+    }
+    sizes.push(size);
+  }
+  const largest = sizes.reduce(
+    (best, value, i) => (value > sizes[best] ? i : best),
+    0,
+  );
+  const keepFace = Array.from(
+    { length: faceCount },
+    (_, face) =>
+      sizes[component[face]] >= Math.max(1, minComponentFaces) &&
+      (!keepLargest || component[face] === largest),
+  );
+  const used = new Set<number>();
+  const keptIndices: number[] = [];
+  for (let face = 0; face < faceCount; face += 1)
+    if (keepFace[face])
+      for (let j = 0; j < 3; j += 1) {
+        const vertex = mesh.indices[face * 3 + j];
+        used.add(vertex);
+        keptIndices.push(vertex);
+      }
+  const ordered = [...used].sort((a, b) => a - b);
+  const remap = new Map(ordered.map((old, i) => [old, i]));
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const colors: number[] = [];
+  for (const old of ordered) {
+    positions.push(...mesh.positions.slice(old * 3, old * 3 + 3));
+    normals.push(...mesh.normals.slice(old * 3, old * 3 + 3));
+    colors.push(...mesh.colors.slice(old * 3, old * 3 + 3));
+  }
+  const indices: number[] = [];
+  for (const old of keptIndices) {
+    const mapped = remap.get(old);
+    if (mapped !== undefined) indices.push(mapped);
+  }
+  const clean = {
+    positions: new Float32Array(positions),
+    normals: new Float32Array(normals),
+    colors: new Float32Array(colors),
+    indices: new Uint32Array(indices),
+  };
+  if (smoothingIterations > 0) {
+    taubinSmooth(clean, Math.min(10, smoothingIterations));
+    recomputeNormals(clean);
+  }
+  return clean;
+}
+
+export function taubinSmooth(mesh: MeshData, iterations: number) {
+  const n = mesh.positions.length / 3;
+  const neighbours = Array.from({ length: n }, () => new Set<number>());
+  for (let i = 0; i < mesh.indices.length; i += 3)
+    for (const a of [mesh.indices[i], mesh.indices[i + 1], mesh.indices[i + 2]])
+      for (const b of [
+        mesh.indices[i],
+        mesh.indices[i + 1],
+        mesh.indices[i + 2],
+      ])
+        if (a !== b) neighbours[a].add(b);
+  for (let iteration = 0; iteration < iterations; iteration += 1)
+    for (const [factor, sign] of [
+      [0.33, 1],
+      [-0.34, -1],
+    ] as const) {
+      const next = mesh.positions.slice();
+      for (let i = 0; i < n; i += 1) {
+        if (!neighbours[i].size) continue;
+        const average: Vec3 = [0, 0, 0];
+        for (const neighbour of neighbours[i]) {
+          average[0] += mesh.positions[neighbour * 3];
+          average[1] += mesh.positions[neighbour * 3 + 1];
+          average[2] += mesh.positions[neighbour * 3 + 2];
+        }
+        average[0] /= neighbours[i].size;
+        average[1] /= neighbours[i].size;
+        average[2] /= neighbours[i].size;
+        const current: Vec3 = [
+          mesh.positions[i * 3],
+          mesh.positions[i * 3 + 1],
+          mesh.positions[i * 3 + 2],
+        ];
+        const moved = add(current, mul(sub(average, current), factor * sign));
+        next.set(moved, i * 3);
+      }
+      mesh.positions.set(next);
+    }
+}
+
+export function recomputeNormals(mesh: MeshData) {
+  mesh.normals.fill(0);
+  for (let i = 0; i < mesh.indices.length; i += 3) {
+    const ia = mesh.indices[i] * 3;
+    const ib = mesh.indices[i + 1] * 3;
+    const ic = mesh.indices[i + 2] * 3;
+    const a: Vec3 = [
+      mesh.positions[ia],
+      mesh.positions[ia + 1],
+      mesh.positions[ia + 2],
+    ];
+    const b: Vec3 = [
+      mesh.positions[ib],
+      mesh.positions[ib + 1],
+      mesh.positions[ib + 2],
+    ];
+    const c: Vec3 = [
+      mesh.positions[ic],
+      mesh.positions[ic + 1],
+      mesh.positions[ic + 2],
+    ];
+    const normal = cross(sub(b, a), sub(c, a));
+    for (const index of [ia, ib, ic]) {
+      mesh.normals[index] += normal[0];
+      mesh.normals[index + 1] += normal[1];
+      mesh.normals[index + 2] += normal[2];
+    }
+  }
+  for (let i = 0; i < mesh.normals.length; i += 3) {
+    const normal = normalize([
+      mesh.normals[i],
+      mesh.normals[i + 1],
+      mesh.normals[i + 2],
+    ]);
+    mesh.normals.set(normal, i);
+  }
+}
+
+export function formatMemory(bytes: number) {
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KiB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GiB`;
+}
+
+export function convertPly(
+  bytes: ArrayBuffer,
+  params: ConversionParams,
+  callbacks: EngineCallbacks = {},
+) {
+  const elapsed: Record<string, number> = {};
+  const stage = (name: string, fn: () => void) => {
+    const start = performance.now();
+    fn();
+    elapsed[name] = performance.now() - start;
+  };
+  let parsed: ParsedPly | undefined;
+  callbacks.onStage?.("parsing", 0);
+  stage("parsing", () => {
+    parsed = parsePly(bytes, params.opacityThreshold);
+  });
+  if (!parsed) throw new Error("PLY parsing did not produce a result");
+  const parsedResult = parsed;
+  callbacks.onStage?.(
+    "parsing",
+    1,
+    `${parsedResult.report.retainedCount.toLocaleString()} retained`,
+  );
+  callbacks.onStage?.("activating", 1);
+  let field!: GridField;
+  stage("voxelizing", () => {
+    field = voxelize(parsedResult.gaussians, params, callbacks);
+  });
+  const iso =
+    params.isoMode === "manual"
+      ? params.isoThreshold
+      : automaticIso(field.stats);
+  let mesh!: MeshData;
+  stage("extracting", () => {
+    mesh = extractMarchingTetrahedra(
+      field,
+      parsedResult.gaussians,
+      iso,
+      params.sigmaRadius,
+      callbacks,
+    );
+  });
+  callbacks.onStage?.("cleaning", 0);
+  stage("cleaning", () => {
+    mesh = cleanupMesh(
+      mesh,
+      params.keepLargestComponent,
+      params.minComponentFaces,
+      params.smoothingIterations,
+    );
+  });
+  callbacks.onStage?.("normals", 1);
+  callbacks.onStage?.("ready", 1);
+  return {
+    mesh,
+    field,
+    report: parsedResult.report,
+    isoThreshold: iso,
+    elapsed,
+  };
+}

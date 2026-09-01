@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+title: "3DGS2Mesh Web"
+message: "If you use 3DGS2Mesh Web, please cite this project."
+type: software
+authors:
+  - family-names: Sasaki
+    given-names: Ryosuke
+repository-code: "https://github.com/rsasaki0109/3dgs2mesh-web"
+url: "https://rsasaki0109.github.io/3dgs2mesh-web/"
+license: Apache-2.0
+version: 0.1.0
+date-released: 2026-09-01

@@ -1,0 +1,142 @@
+export type Vec3 = [number, number, number];
+
+export interface Gaussian {
+  mean: Vec3;
+  scale: Vec3;
+  rotation: number[];
+  opacity: number;
+  color: [number, number, number];
+}
+
+export interface ParseReport {
+  inputCount: number;
+  retainedCount: number;
+  rejectedOpacity: number;
+  rejectedNonFinite: number;
+  warnings: string[];
+}
+
+export interface ParsedPly {
+  gaussians: Gaussian[];
+  report: ParseReport;
+}
+
+export interface ConversionParams {
+  resolution: number;
+  opacityThreshold: number;
+  sigmaRadius: number;
+  boundsQuantile: number;
+  isoMode: "automatic" | "manual";
+  isoThreshold: number;
+  keepLargestComponent: boolean;
+  minComponentFaces: number;
+  smoothingIterations: number;
+}
+
+export type PresetName = "fast" | "balanced" | "detailed";
+
+export interface DensityStats {
+  min: number;
+  max: number;
+  nonZero: number;
+  histogram: number[];
+}
+
+export interface GridField {
+  dims: [number, number, number];
+  min: Vec3;
+  max: Vec3;
+  spacing: number;
+  density: Float32Array;
+  stats: DensityStats;
+  index: SpatialIndex;
+}
+
+export interface SpatialIndex {
+  tileEdge: number;
+  tileDims: [number, number, number];
+  buckets: number[][];
+}
+
+export interface MeshData {
+  positions: Float32Array;
+  normals: Float32Array;
+  colors: Float32Array;
+  indices: Uint32Array;
+}
+
+export interface ConversionResult {
+  mesh: MeshData;
+  field: GridField;
+  report: ParseReport;
+  isoThreshold: number;
+  elapsed: Record<string, number>;
+}
+
+export type ConversionStage =
+  | "parsing"
+  | "activating"
+  | "indexing"
+  | "voxelizing"
+  | "extracting"
+  | "cleaning"
+  | "normals"
+  | "ready";
+
+export interface WorkerStartMessage {
+  type: "start";
+  id: number;
+  bytes: ArrayBuffer;
+  params: ConversionParams;
+}
+
+export interface WorkerExtractMessage {
+  type: "extract";
+  id: number;
+  params: ConversionParams;
+  isoThreshold: number;
+}
+
+export interface WorkerCancelMessage {
+  type: "cancel";
+}
+
+export type WorkerRequest =
+  | WorkerStartMessage
+  | WorkerExtractMessage
+  | WorkerCancelMessage;
+
+export interface WorkerProgressMessage {
+  type: "progress";
+  id: number;
+  stage: ConversionStage;
+  percent: number;
+  detail?: string;
+  elapsed?: number;
+}
+
+export interface WorkerReadyMessage {
+  type: "ready";
+  id: number;
+  result: {
+    mesh: MeshData;
+    report: ParseReport;
+    dims: [number, number, number];
+    voxelCount: number;
+    gridMemory: number;
+    density: DensityStats;
+    isoThreshold: number;
+    elapsed: Record<string, number>;
+  };
+}
+
+export interface WorkerErrorMessage {
+  type: "error";
+  id: number;
+  message: string;
+}
+
+export type WorkerResponse =
+  | WorkerProgressMessage
+  | WorkerReadyMessage
+  | WorkerErrorMessage;

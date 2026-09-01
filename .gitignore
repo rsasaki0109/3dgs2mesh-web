@@ -1,0 +1,9 @@
+node_modules/
+dist/
+src/wasm/*
+!src/wasm/mesh_wasm.d.ts
+target/
+playwright-report/
+test-results/
+.DS_Store
+*.local

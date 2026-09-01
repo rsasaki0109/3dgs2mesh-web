@@ -1,0 +1,8 @@
+[package]
+name = "mesh-core"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Pure Rust density-field extraction for 3D Gaussian Splatting assets"
+
+[dependencies]

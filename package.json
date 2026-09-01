@@ -1,0 +1,42 @@
+{
+  "name": "3dgs2mesh-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser-based 3D Gaussian Splatting to mesh converter powered by Rust, WebAssembly, and Three.js.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/build-wasm.mjs && vite",
+    "build": "node scripts/build-wasm.mjs && npm run typecheck && vite build",
+    "preview": "vite preview",
+    "test": "vitest run --config vitest.config.ts",
+    "test:e2e": "playwright test",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "typecheck": "tsc --noEmit",
+    "rust:fmt": "cargo fmt --all -- --check",
+    "rust:test": "cargo test --workspace",
+    "rust:clippy": "cargo clippy --workspace --all-targets -- -D warnings",
+    "check": "npm run lint && npm run typecheck && npm run test && node scripts/rust-check.mjs"
+  },
+  "dependencies": {
+    "@sparkjsdev/spark": "^2.1.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.0",
+    "@playwright/test": "^1.62.1",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@types/node": "^24.3.0",
+    "@types/three": "^0.185.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.9.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
+  }
+}
