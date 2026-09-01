@@ -1,6 +1,6 @@
 # Density-field reconstruction
 
-The v0.2 pipeline is deliberately an approximation designed for one local 3DGS asset. It accepts PLY, SPZ v3, SPLAT, KSPLAT, and packaged SOG; it does not use training cameras or source images.
+The v0.3 pipeline is deliberately an approximation designed for one local 3DGS asset. It accepts PLY, SPZ v3, SPLAT, KSPLAT, and packaged SOG; it does not use training cameras or source images.
 
 ## Input and activation
 
@@ -45,7 +45,7 @@ The global bounds and 8³ candidate bins remain deterministic, but density is ev
 
 ## Occupancy and mesh repair
 
-Optional denoise classifies samples at the selected iso and applies a conservative six-neighbour rule: isolated occupied samples with at most one occupied neighbour are removed, while empty samples with at least five occupied neighbours are filled. Outside flood fill starts from every empty boundary voxel; empty samples unreachable from the boundary are classified as enclosed and raised just above iso. This volume-wide operation is disabled in slab mode. Small, simple, unbranched mesh boundary loops can be capped by a color-averaged center fan. These operations improve common defects but do not prove watertightness or manifoldness.
+Optional denoise classifies samples at the selected iso and applies a conservative six-neighbour rule: isolated occupied samples with at most one occupied neighbour are removed, while empty samples with at least five occupied neighbours are filled. Outside flood fill starts from every empty boundary voxel; empty samples unreachable from the boundary are classified as enclosed and raised just above iso. This volume-wide operation is disabled in slab mode. The optional signed-distance mode propagates six-neighbour distance from the repaired occupancy interface within a bounded number of voxels and extracts its zero level set. A tiny deterministic perturbation resolves exact lattice ties without changing occupancy. This is a grid distance stabilization, not a camera- or depth-derived metric TSDF. Slab mode includes a halo wider than the distance band. Small, simple, unbranched mesh boundary loops can be capped by a color-averaged center fan. These operations improve common defects but do not prove watertightness or manifoldness.
 
 ## Normals and colors
 
@@ -55,4 +55,6 @@ Central finite differences estimate the density gradient. Since density grows to
 
 Triangle connectivity is computed through shared vertices. By default only the largest component remains; a minimum component face count is also available. Taubin's alternating positive/negative neighborhood passes provide conservative smoothing. Optional deterministic vertex clustering remains available. The default reducer accumulates face-plane quadrics, ranks mesh edges by quadric error, deterministically merges edge-connected clusters, removes duplicate/degenerate triangles and unreferenced vertices, then recomputes normals. It is a browser-oriented quadric-error-guided reducer, not a claim of topology-preserving remeshing. The UI reports before/after cleanup and decimation counts plus boundary edges, non-manifold edges, degenerate faces, and connected components.
 
-This does not guarantee manifold or watertight geometry. Packed formats may introduce quantization error. Learned stereo depth, opacity fields from training views, TSDF fusion, textures, higher-order SH, and view-dependent appearance remain out of scope for v0.2.
+The global outermost grid layer is classified strictly below the active extraction iso, including when signed-distance iso is zero. The six tetrahedra use explicit one-in, three-in, and cyclic two-in/two-out cases; shared grid-edge keys deduplicate crossings, and gradient normals determine winding. Closed synthetic density and signed-distance fixtures are required to report zero boundary, non-manifold, and degenerate elements.
+
+This still does not guarantee manifold or watertight geometry for arbitrary input. Packed formats may introduce quantization error. Learned stereo depth, opacity fields from training views, metric TSDF fusion, textures, higher-order SH, and view-dependent appearance remain out of scope for v0.3.

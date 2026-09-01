@@ -169,6 +169,11 @@ describe("conversion primitives", () => {
     expect([...mesh.positions, ...mesh.normals].every(Number.isFinite)).toBe(
       true,
     );
+    expect(analyzeMesh(mesh)).toMatchObject({
+      boundaryEdges: 0,
+      nonManifoldEdges: 0,
+      degenerateFaces: 0,
+    });
   });
   it("removes small connected components", () => {
     const mesh: MeshData = {
@@ -242,6 +247,37 @@ describe("conversion primitives", () => {
     expect(result.field.density).toHaveLength(125);
     expect(result.field.density[(2 * 5 + 2) * 5 + 2]).toBeGreaterThan(0.5);
   });
+  it("builds a finite narrow-band signed-distance surface", () => {
+    const dims: [number, number, number] = [7, 7, 7];
+    const density = new Float32Array(7 * 7 * 7);
+    for (let z = 2; z <= 4; z += 1)
+      for (let y = 2; y <= 4; y += 1)
+        for (let x = 2; x <= 4; x += 1) density[(z * 7 + y) * 7 + x] = 1;
+    const field = {
+      dims,
+      min: [0, 0, 0] as [number, number, number],
+      max: [6, 6, 6] as [number, number, number],
+      spacing: 1,
+      density,
+      stats: densityStats(density),
+      index: {
+        tileEdge: 8,
+        tileDims: [1, 1, 1] as [number, number, number],
+        buckets: [[]],
+      },
+    };
+    const result = processDensityField(field, 0.5, 0, false, 3);
+    expect(result.extractionIso).toBe(0);
+    expect(result.field.density[(3 * 7 + 3) * 7 + 3]).toBeGreaterThan(0);
+    expect(result.field.density[0]).toBeLessThan(0);
+    expect([...result.field.density].every(Number.isFinite)).toBe(true);
+    const mesh = extractMarchingTetrahedra(result.field, [], 0, 3);
+    expect(analyzeMesh(mesh)).toMatchObject({
+      boundaryEdges: 0,
+      nonManifoldEdges: 0,
+      degenerateFaces: 0,
+    });
+  });
   it("caps a small simple boundary loop", () => {
     const openTetrahedron: MeshData = {
       positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]),
@@ -259,6 +295,11 @@ describe("conversion primitives", () => {
     const context = prepareStreamingContext([simpleGaussian()], params);
     const result = extractStreamingMesh(context, params, context.automaticIso);
     expect(result.mesh.indices.length).toBeGreaterThan(0);
+    expect(analyzeMesh(result.mesh)).toMatchObject({
+      boundaryEdges: 0,
+      nonManifoldEdges: 0,
+      degenerateFaces: 0,
+    });
     expect(context.peakDensityBytes).toBeLessThan(
       context.dims[0] * context.dims[1] * context.dims[2] * 4,
     );
@@ -293,6 +334,11 @@ describe("PLY and sample", () => {
       mesh.indices.length / 3,
     );
     expect(mesh.indices.length).toBeGreaterThan(0);
+    expect(analyzeMesh(mesh)).toMatchObject({
+      boundaryEdges: 0,
+      nonManifoldEdges: 0,
+      degenerateFaces: 0,
+    });
   });
   it("sample remains non-empty at fast cleanup defaults", () => {
     const parsed = parsePly(createSyntheticSample());

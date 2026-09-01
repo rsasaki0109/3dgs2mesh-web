@@ -288,6 +288,39 @@ export function SettingsPanel({ params, onChange, onPreset, disabled }: Props) {
             Fill enclosed density voids
           </label>
           <label>
+            Surface field
+            <select
+              value={params.surfaceField}
+              onChange={(event) =>
+                set(
+                  "surfaceField",
+                  event.target.value as ConversionParams["surfaceField"],
+                )
+              }
+              disabled={disabled}
+            >
+              <option value="density">Raw Gaussian density</option>
+              <option value="signed-distance">
+                Narrow-band signed distance
+              </option>
+            </select>
+          </label>
+          <label>
+            Distance band <output>{params.distanceBandVoxels} voxels</output>
+            <input
+              aria-label="Distance band"
+              type="range"
+              min="2"
+              max="12"
+              step="1"
+              value={params.distanceBandVoxels}
+              onChange={(event) =>
+                set("distanceBandVoxels", Number(event.target.value))
+              }
+              disabled={disabled || params.surfaceField !== "signed-distance"}
+            />
+          </label>
+          <label>
             Fill mesh holes up to{" "}
             <output>
               {params.maxHoleEdges ? `${params.maxHoleEdges} edges` : "Off"}

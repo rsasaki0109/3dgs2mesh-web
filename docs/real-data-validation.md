@@ -16,7 +16,7 @@ REAL_PLY=/absolute/path/to/point_cloud.ply npm run test:e2e
 
 On PowerShell, use `$env:REAL_PLY = 'C:\\absolute\\path\\point_cloud.ply'` before running `npm run test:e2e`.
 
-For the structured v0.2 reconstruction report (including repair, topology, timing, and export assertions), set `QUALITY_INPUT` and run `npm run test:quality` as described in [quality-validation.md](quality-validation.md).
+For the structured v0.3 reconstruction report (including repair, topology, timing, export assertions, and paired density/signed-distance comparison), set `QUALITY_INPUT` and use the commands in [quality-validation.md](quality-validation.md).
 
 For a real packed asset, set `REAL_SPLAT_INPUT` to an `.spz`, `.ksplat`, or packaged `.sog`/`.zip` file. This opt-in browser check verifies local decoding and leaves the fixture outside the repository:
 

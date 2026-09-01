@@ -386,13 +386,17 @@ pub fn make_grid(
     for z in 0..dims[2] {
         for y in 0..dims[1] {
             for x in 0..dims[0] {
+                let candidates = index.candidates_for_grid(x, y, z);
+                if candidates.is_empty() {
+                    continue;
+                }
                 let p = Vec3::new(
                     bounds.min.x + x as f32 * spacing,
                     bounds.min.y + y as f32 * spacing,
                     bounds.min.z + z as f32 * spacing,
                 );
                 let mut value = 0.0;
-                for &i in index.candidates_for_grid(x, y, z) {
+                for &i in candidates {
                     value += gaussian_density(&gaussians[i], p, params.sigma_radius);
                 }
                 let id = ((z * dims[1] + y) * dims[0] + x) as usize;
@@ -449,8 +453,9 @@ pub fn process_density_field(
     iso: f32,
     denoise_iterations: u32,
     fill_enclosed_voids: bool,
+    distance_band_voxels: u32,
 ) -> (GridField, usize, usize) {
-    if denoise_iterations == 0 && !fill_enclosed_voids {
+    if denoise_iterations == 0 && !fill_enclosed_voids && distance_band_voxels == 0 {
         return (field.clone(), 0, 0);
     }
     let [nx, ny, nz] = field.dims;
@@ -562,8 +567,96 @@ pub fn process_density_field(
         for (i, value) in result.density.iter_mut().enumerate() {
             if occupied[i] == 0 && !exterior[i] {
                 *value = iso + epsilon;
+                occupied[i] = 1;
                 filled += 1;
             }
+        }
+    }
+    if distance_band_voxels > 0 {
+        let band = distance_band_voxels.clamp(2, 32) as u16;
+        for z in 0..nz {
+            for y in 0..ny {
+                for x in 0..nx {
+                    if x == 0 || y == 0 || z == 0 || x == nx - 1 || y == ny - 1 || z == nz - 1 {
+                        occupied[idx(field.dims, x, y, z)] = 0;
+                    }
+                }
+            }
+        }
+        let mut distance = vec![u16::MAX; occupied.len()];
+        let mut queue = VecDeque::new();
+        for z in 0..nz {
+            for y in 0..ny {
+                for x in 0..nx {
+                    let id = idx(field.dims, x, y, z);
+                    let mut interface_voxel = false;
+                    for (dx, dy, dz) in neighbours {
+                        let px = x as i32 + dx;
+                        let py = y as i32 + dy;
+                        let pz = z as i32 + dz;
+                        if px >= 0
+                            && py >= 0
+                            && pz >= 0
+                            && px < nx as i32
+                            && py < ny as i32
+                            && pz < nz as i32
+                            && occupied[idx(field.dims, px as u32, py as u32, pz as u32)]
+                                != occupied[id]
+                        {
+                            interface_voxel = true;
+                            break;
+                        }
+                    }
+                    if interface_voxel {
+                        distance[id] = 0;
+                        queue.push_back(id);
+                    }
+                }
+            }
+        }
+        while let Some(id) = queue.pop_front() {
+            if distance[id] + 1 >= band {
+                continue;
+            }
+            let x = (id as u32) % nx;
+            let y = ((id as u32) / nx) % ny;
+            let z = (id as u32) / (nx * ny);
+            for (dx, dy, dz) in neighbours {
+                let px = x as i32 + dx;
+                let py = y as i32 + dy;
+                let pz = z as i32 + dz;
+                if px < 0
+                    || py < 0
+                    || pz < 0
+                    || px >= nx as i32
+                    || py >= ny as i32
+                    || pz >= nz as i32
+                {
+                    continue;
+                }
+                let next = idx(field.dims, px as u32, py as u32, pz as u32);
+                if distance[next] == u16::MAX {
+                    distance[next] = distance[id] + 1;
+                    queue.push_back(next);
+                }
+            }
+        }
+        for (i, value) in result.density.iter_mut().enumerate() {
+            let magnitude = if distance[i] == u16::MAX {
+                band as f32
+            } else {
+                (distance[i] as f32 + 0.5).min(band as f32)
+            };
+            let jitter = ((i as u32)
+                .wrapping_mul(1_664_525)
+                .wrapping_add(1_013_904_223)
+                % 1024) as f32
+                * 1.0e-7;
+            *value = if occupied[i] == 1 {
+                magnitude + jitter
+            } else {
+                -magnitude - jitter
+            };
         }
     }
     (result, denoised, filled)
@@ -647,8 +740,37 @@ fn color_at(field: &GridField, gaussians: &[Gaussian], p: Vec3, sigma: f32) -> [
     }
 }
 
+fn emit_oriented_triangle(mesh: &mut Mesh, a: u32, mut b: u32, mut c: u32) {
+    if a == b || b == c || c == a {
+        return;
+    }
+    let point = |vertex: u32| {
+        let offset = vertex as usize * 3;
+        Vec3::new(
+            mesh.positions[offset],
+            mesh.positions[offset + 1],
+            mesh.positions[offset + 2],
+        )
+    };
+    let normal = |vertex: u32| {
+        let offset = vertex as usize * 3;
+        Vec3::new(
+            mesh.normals[offset],
+            mesh.normals[offset + 1],
+            mesh.normals[offset + 2],
+        )
+    };
+    let face = point(b).minus(point(a)).cross(point(c).minus(point(a)));
+    let expected = normal(a).plus(normal(b)).plus(normal(c));
+    if face.dot(expected) < 0.0 {
+        std::mem::swap(&mut b, &mut c);
+    }
+    mesh.indices.extend_from_slice(&[a, b, c]);
+}
+
 pub fn extract_mesh(field: &GridField, gaussians: &[Gaussian], iso: f32, sigma: f32) -> Mesh {
     let mut mesh = Mesh::default();
+    let mut pending_triangles: Vec<[u32; 3]> = Vec::new();
     let mut edges: HashMap<(usize, usize), u32> = HashMap::new();
     let tetra = [
         [0usize, 5, 1, 6],
@@ -704,7 +826,17 @@ pub fn extract_mesh(field: &GridField, gaussians: &[Gaussian], iso: f32, sigma: 
                     let (dx, dy, dz) = cube_offsets[i];
                     let q = (x + dx, y + dy, z + dz);
                     p[i] = grid_point(field, q.0, q.1, q.2);
-                    v[i] = field.density[idx(field.dims, q.0, q.1, q.2)];
+                    v[i] = if q.0 == 0
+                        || q.1 == 0
+                        || q.2 == 0
+                        || q.0 == field.dims[0] - 1
+                        || q.1 == field.dims[1] - 1
+                        || q.2 == field.dims[2] - 1
+                    {
+                        iso - (iso.abs() * 1.0e-6).max(EPS)
+                    } else {
+                        field.density[idx(field.dims, q.0, q.1, q.2)]
+                    };
                     g[i] = gradient(field, q.0, q.1, q.2);
                 }
                 for tet in tetra {
@@ -716,19 +848,20 @@ pub fn extract_mesh(field: &GridField, gaussians: &[Gaussian], iso: f32, sigma: 
                     if count == 0 || count == 4 {
                         continue;
                     }
-                    let mut cross: Vec<(usize, usize)> = Vec::new();
-                    for a in 0..4 {
-                        for b in (a + 1)..4 {
-                            if inside[a] != inside[b] {
-                                cross.push((tet[a], tet[b]));
-                            }
-                        }
-                    }
-                    let mut verts = Vec::new();
-                    for (ea, eb) in cross {
+                    let inside_vertices: Vec<usize> = tet
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, vertex)| inside[i].then_some(*vertex))
+                        .collect();
+                    let outside_vertices: Vec<usize> = tet
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, vertex)| (!inside[i]).then_some(*vertex))
+                        .collect();
+                    let mut crossing_vertex = |ea: usize, eb: usize| {
                         let ca = cube_offsets[ea];
                         let cb = cube_offsets[eb];
-                        verts.push(add_vertex(
+                        add_vertex(
                             (x + ca.0, y + ca.1, z + ca.2),
                             (x + cb.0, y + cb.1, z + cb.2),
                             p[ea],
@@ -737,19 +870,41 @@ pub fn extract_mesh(field: &GridField, gaussians: &[Gaussian], iso: f32, sigma: 
                             v[eb],
                             g[ea],
                             g[eb],
-                        ));
-                    }
-                    if verts.len() == 3 {
-                        mesh.indices
-                            .extend_from_slice(&[verts[0], verts[1], verts[2]]);
-                    } else if verts.len() == 4 {
-                        mesh.indices.extend_from_slice(&[
-                            verts[0], verts[1], verts[2], verts[0], verts[2], verts[3],
-                        ]);
+                        )
+                    };
+                    if count == 1 || count == 3 {
+                        let pivot = if count == 1 {
+                            inside_vertices[0]
+                        } else {
+                            outside_vertices[0]
+                        };
+                        let opposite = if count == 1 {
+                            &outside_vertices
+                        } else {
+                            &inside_vertices
+                        };
+                        let a = crossing_vertex(pivot, opposite[0]);
+                        let b = crossing_vertex(pivot, opposite[1]);
+                        let c = crossing_vertex(pivot, opposite[2]);
+                        pending_triangles.push([a, b, c]);
+                    } else {
+                        let i0 = inside_vertices[0];
+                        let i1 = inside_vertices[1];
+                        let o0 = outside_vertices[0];
+                        let o1 = outside_vertices[1];
+                        let v00 = crossing_vertex(i0, o0);
+                        let v01 = crossing_vertex(i0, o1);
+                        let v11 = crossing_vertex(i1, o1);
+                        let v10 = crossing_vertex(i1, o0);
+                        pending_triangles.push([v00, v01, v11]);
+                        pending_triangles.push([v00, v11, v10]);
                     }
                 }
             }
         }
+    }
+    for [a, b, c] in pending_triangles {
+        emit_oriented_triangle(&mut mesh, a, b, c);
     }
     mesh
 }
@@ -1292,10 +1447,44 @@ mod tests {
         field.dims = [5, 5, 5];
         field.density = vec![1.0; 125];
         field.density[idx(field.dims, 2, 2, 2)] = 0.0;
-        let (processed, denoised, filled) = process_density_field(&field, 0.5, 0, true);
+        let (processed, denoised, filled) = process_density_field(&field, 0.5, 0, true, 0);
         assert_eq!(denoised, 0);
         assert_eq!(filled, 1);
         assert!(processed.density[idx(field.dims, 2, 2, 2)] > 0.5);
+    }
+    #[test]
+    fn signed_distance_surface_is_closed() {
+        let gs = vec![g()];
+        let mut field = make_grid(
+            &gs,
+            &ConversionParams {
+                resolution: 8,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        field.dims = [7, 7, 7];
+        field.density = vec![0.0; 7 * 7 * 7];
+        for z in 2..=4 {
+            for y in 2..=4 {
+                for x in 2..=4 {
+                    field.density[idx(field.dims, x, y, z)] = 1.0;
+                }
+            }
+        }
+        let (processed, _, _) = process_density_field(&field, 0.5, 0, false, 3);
+        assert!(processed.density[idx(field.dims, 3, 3, 3)] > 0.0);
+        assert!(processed.density[0] < 0.0);
+        let mesh = extract_mesh(&processed, &gs, 0.0, 3.0);
+        let mut edges = HashMap::<(u32, u32), usize>::new();
+        for face in mesh.indices.chunks_exact(3) {
+            for (a, b) in [(face[0], face[1]), (face[1], face[2]), (face[2], face[0])] {
+                let key = if a < b { (a, b) } else { (b, a) };
+                *edges.entry(key).or_default() += 1;
+            }
+        }
+        assert!(!mesh.indices.is_empty());
+        assert!(edges.values().all(|count| *count == 2));
     }
     #[test]
     fn cleanup_components() {

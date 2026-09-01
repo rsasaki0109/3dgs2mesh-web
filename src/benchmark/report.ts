@@ -41,7 +41,7 @@ export function buildBenchmarkReport(
 ) {
   return {
     schema: BENCHMARK_SCHEMA,
-    appVersion: "0.2.0",
+    appVersion: "0.3.0",
     timestamp: environment.timestamp ?? new Date().toISOString(),
     environment: {
       userAgent: environment.userAgent,

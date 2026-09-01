@@ -1,5 +1,5 @@
 import type { GridField, MeshData } from "../types/model";
-import { recomputeNormals } from "./engine";
+import { densityStats, recomputeNormals } from "./engine";
 
 const voxelIndex = (
   dims: [number, number, number],
@@ -10,6 +10,7 @@ const voxelIndex = (
 
 export interface DensityProcessingResult {
   field: GridField;
+  extractionIso: number;
   denoisedVoxels: number;
   enclosedVoxelsFilled: number;
 }
@@ -20,9 +21,15 @@ export function processDensityField(
   iso: number,
   denoiseIterations: number,
   fillEnclosedVoids: boolean,
+  distanceBandVoxels = 0,
 ): DensityProcessingResult {
-  if (denoiseIterations <= 0 && !fillEnclosedVoids)
-    return { field, denoisedVoxels: 0, enclosedVoxelsFilled: 0 };
+  if (denoiseIterations <= 0 && !fillEnclosedVoids && distanceBandVoxels <= 0)
+    return {
+      field,
+      extractionIso: iso,
+      denoisedVoxels: 0,
+      enclosedVoxelsFilled: 0,
+    };
   const density = field.density.slice();
   const [nx, ny, nz] = field.dims;
   const occupied = new Uint8Array(density.length);
@@ -108,11 +115,86 @@ export function processDensityField(
     for (let i = 0; i < density.length; i += 1)
       if (!occupied[i] && !exterior[i]) {
         density[i] = iso + epsilon;
+        occupied[i] = 1;
         enclosedVoxelsFilled += 1;
       }
   }
+  let extractionIso = iso;
+  if (distanceBandVoxels > 0) {
+    const band = Math.max(2, Math.min(32, Math.round(distanceBandVoxels)));
+    const unvisited = 0xffff;
+    const distance = new Uint16Array(density.length);
+    distance.fill(unvisited);
+    const queue = new Uint32Array(density.length);
+    let head = 0;
+    let tail = 0;
+    const globalDims = field.globalDims ?? field.dims;
+    const offset = field.gridOffset ?? [0, 0, 0];
+    for (let z = 0; z < nz; z += 1)
+      for (let y = 0; y < ny; y += 1)
+        for (let x = 0; x < nx; x += 1) {
+          const id = voxelIndex(field.dims, x, y, z);
+          const global = [x + offset[0], y + offset[1], z + offset[2]];
+          if (
+            global.some(
+              (value, axis) => value === 0 || value === globalDims[axis] - 1,
+            )
+          )
+            occupied[id] = 0;
+          let interfaceVoxel = false;
+          for (const [dx, dy, dz] of neighbours) {
+            const px = x + dx;
+            const py = y + dy;
+            const pz = z + dz;
+            if (px < 0 || py < 0 || pz < 0 || px >= nx || py >= ny || pz >= nz)
+              continue;
+            if (occupied[voxelIndex(field.dims, px, py, pz)] !== occupied[id]) {
+              interfaceVoxel = true;
+              break;
+            }
+          }
+          if (interfaceVoxel) {
+            distance[id] = 0;
+            queue[tail++] = id;
+          }
+        }
+    while (head < tail) {
+      const id = queue[head++];
+      if (distance[id] + 1 >= band) continue;
+      const x = id % nx;
+      const y = Math.floor(id / nx) % ny;
+      const z = Math.floor(id / (nx * ny));
+      for (const [dx, dy, dz] of neighbours) {
+        const px = x + dx;
+        const py = y + dy;
+        const pz = z + dz;
+        if (px < 0 || py < 0 || pz < 0 || px >= nx || py >= ny || pz >= nz)
+          continue;
+        const next = voxelIndex(field.dims, px, py, pz);
+        if (distance[next] !== unvisited) continue;
+        distance[next] = distance[id] + 1;
+        queue[tail++] = next;
+      }
+    }
+    for (let i = 0; i < density.length; i += 1) {
+      const magnitude =
+        distance[i] === unvisited ? band : Math.min(band, distance[i] + 0.5);
+      const x = i % nx;
+      const y = Math.floor(i / nx) % ny;
+      const z = Math.floor(i / (nx * ny));
+      const globalIndex =
+        ((z + offset[2]) * globalDims[1] + (y + offset[1])) * globalDims[0] +
+        x +
+        offset[0];
+      const jitter =
+        (((globalIndex * 1664525 + 1013904223) >>> 0) % 1024) * 1e-7;
+      density[i] = occupied[i] ? magnitude + jitter : -magnitude - jitter;
+    }
+    extractionIso = 0;
+  }
   return {
-    field: { ...field, density },
+    field: { ...field, density, stats: densityStats(density) },
+    extractionIso,
     denoisedVoxels,
     enclosedVoxelsFilled,
   };

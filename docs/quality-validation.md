@@ -7,9 +7,12 @@ $env:QUALITY_INPUT = "C:\data\object.ply"
 $env:QUALITY_MIN_TRIANGLES = "100"
 $env:QUALITY_SCREENSHOT = "C:\temp\object-quality.png" # optional
 npm run test:quality
+npm run test:quality:compare # raw density versus narrow-band signed distance
 ```
 
 The harness loads the file through the same browser input, worker decoder, density pipeline, repair stages, and viewer used by the public app. It enables a conservative repair configuration, waits for Ready, asserts a configurable minimum triangle count, and prints one `QUALITY_REPORT` JSON line containing vertex, triangle, boundary-edge, and non-manifold-edge counts.
+
+The comparison command converts the same local asset twice and emits a `QUALITY_COMPARISON` JSON record with density and signed-distance topology counts. It is diagnostic evidence, not a promise that signed-distance stabilization improves every scene.
 
 Recommended validation set:
 

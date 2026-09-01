@@ -1,6 +1,6 @@
 {
   "name": "3dgs2mesh-web",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Browser-based 3D Gaussian Splatting to mesh converter powered by Rust, WebAssembly, and Three.js.",
   "license": "Apache-2.0",
@@ -13,6 +13,7 @@
     "test:e2e": "playwright test",
     "test:e2e:browsers": "playwright test tests/e2e/smoke.spec.ts --config playwright.browsers.config.ts",
     "test:quality": "playwright test tests/e2e/quality.spec.ts",
+    "test:quality:compare": "playwright test tests/e2e/quality-comparison.spec.ts",
     "benchmark:summary": "node scripts/summarize-benchmarks.mjs",
     "lint": "biome check .",
     "format": "biome format --write .",

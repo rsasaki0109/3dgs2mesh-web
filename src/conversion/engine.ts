@@ -291,13 +291,15 @@ export function voxelize(
     checkCancelled(callbacks);
     for (let y = 0; y < ny; y += 1)
       for (let x = 0; x < nx; x += 1) {
+        const candidates = tileCandidates(index, x, y, z);
+        if (!candidates.length) continue;
         const p: Vec3 = [
           estimate.bounds.min[0] + x * estimate.spacing,
           estimate.bounds.min[1] + y * estimate.spacing,
           estimate.bounds.min[2] + z * estimate.spacing,
         ];
         let value = 0;
-        for (const candidate of tileCandidates(index, x, y, z))
+        for (const candidate of candidates)
           value += gaussianDensity(gaussians[candidate], p, params.sigmaRadius);
         density[(z * ny + y) * nx + x] = value;
       }
@@ -415,6 +417,23 @@ export function extractMarchingTetrahedra(
   const [nx, ny, nz] = field.dims;
   const zStart = Math.max(0, Math.min(nz - 1, zRange?.start ?? 0));
   const zEnd = Math.max(zStart, Math.min(nz - 1, zRange?.end ?? nz - 1));
+  const emitTriangle = (a: number, b: number, c: number) => {
+    if (a === b || b === c || c === a) return;
+    const point = (vertex: number): Vec3 => [
+      positions[vertex * 3],
+      positions[vertex * 3 + 1],
+      positions[vertex * 3 + 2],
+    ];
+    const normal = (vertex: number): Vec3 => [
+      normals[vertex * 3],
+      normals[vertex * 3 + 1],
+      normals[vertex * 3 + 2],
+    ];
+    const faceNormal = cross(sub(point(b), point(a)), sub(point(c), point(a)));
+    const expected = add(add(normal(a), normal(b)), normal(c));
+    if (dot(faceNormal, expected) < 0) indices.push(a, c, b);
+    else indices.push(a, b, c);
+  };
   const getEdgeVertex = (
     a: [number, number, number],
     b: [number, number, number],
@@ -451,10 +470,20 @@ export function extractMarchingTetrahedra(
         const points = offsets.map(([dx, dy, dz]) =>
           gridPosition(field, x + dx, y + dy, z + dz),
         );
-        const values = offsets.map(
-          ([dx, dy, dz]) =>
-            field.density[gridIndex(field.dims, x + dx, y + dy, z + dz)],
-        );
+        const values = offsets.map(([dx, dy, dz]) => {
+          const local = [x + dx, y + dy, z + dz] as Vec3;
+          const global = local.map(
+            (value, axis) => value + (field.gridOffset?.[axis] ?? 0),
+          ) as Vec3;
+          const globalDims = field.globalDims ?? field.dims;
+          if (
+            global.some(
+              (value, axis) => value === 0 || value === globalDims[axis] - 1,
+            )
+          )
+            return iso - Math.max(EPSILON, Math.abs(iso) * 1e-6);
+          return field.density[gridIndex(field.dims, ...local)];
+        });
         const gradients = offsets.map(([dx, dy, dz]) =>
           fieldGradient(field, x + dx, y + dy, z + dz),
         );
@@ -462,11 +491,9 @@ export function extractMarchingTetrahedra(
           const inside = tetra.map((i) => values[i] >= iso);
           const count = inside.filter(Boolean).length;
           if (count === 0 || count === 4) continue;
-          const crossing: [number, number][] = [];
-          for (let a = 0; a < 4; a += 1)
-            for (let b = a + 1; b < 4; b += 1)
-              if (inside[a] !== inside[b]) crossing.push([tetra[a], tetra[b]]);
-          const vertices = crossing.map(([a, b]) =>
+          const insideVertices = tetra.filter((_, i) => inside[i]);
+          const outsideVertices = tetra.filter((_, i) => !inside[i]);
+          const crossingVertex = (a: number, b: number) =>
             getEdgeVertex(
               [x + offsets[a][0], y + offsets[a][1], z + offsets[a][2]],
               [x + offsets[b][0], y + offsets[b][1], z + offsets[b][2]],
@@ -476,18 +503,25 @@ export function extractMarchingTetrahedra(
               values[b],
               gradients[a],
               gradients[b],
-            ),
-          );
-          if (vertices.length === 3) indices.push(...vertices);
-          else if (vertices.length === 4)
-            indices.push(
-              vertices[0],
-              vertices[1],
-              vertices[2],
-              vertices[0],
-              vertices[2],
-              vertices[3],
             );
+          if (count === 1 || count === 3) {
+            const pivot = count === 1 ? insideVertices[0] : outsideVertices[0];
+            const opposite = count === 1 ? outsideVertices : insideVertices;
+            emitTriangle(
+              crossingVertex(pivot, opposite[0]),
+              crossingVertex(pivot, opposite[1]),
+              crossingVertex(pivot, opposite[2]),
+            );
+          } else {
+            const [i0, i1] = insideVertices;
+            const [o0, o1] = outsideVertices;
+            const v00 = crossingVertex(i0, o0);
+            const v01 = crossingVertex(i0, o1);
+            const v11 = crossingVertex(i1, o1);
+            const v10 = crossingVertex(i1, o0);
+            emitTriangle(v00, v01, v11);
+            emitTriangle(v00, v11, v10);
+          }
         }
       }
     callbacks.onStage?.(
@@ -998,7 +1032,7 @@ export function analyzeMesh(mesh: MeshData) {
     );
     if (
       new Set(vertices).size < 3 ||
-      dot(areaNormal, areaNormal) < EPSILON * EPSILON
+      dot(areaNormal, areaNormal) <= Number.EPSILON
     )
       degenerateFaces += 1;
     for (const [a, b] of [

@@ -40,13 +40,15 @@ function densitySlab(context: DensityContext, zStart: number, layers: number) {
     const z = zStart + localZ;
     for (let y = 0; y < ny; y += 1)
       for (let x = 0; x < nx; x += 1) {
+        const candidates = tileCandidates(context.index, x, y, z);
+        if (!candidates.length) continue;
         const p: Vec3 = [
           context.min[0] + x * context.spacing,
           context.min[1] + y * context.spacing,
           context.min[2] + z * context.spacing,
         ];
         let value = 0;
-        for (const candidate of tileCandidates(context.index, x, y, z))
+        for (const candidate of candidates)
           value += gaussianDensity(
             context.gaussians[candidate],
             p,
@@ -223,13 +225,18 @@ export function extractStreamingMesh(
   for (let slab = 0; slab < slabs; slab += 1) {
     const zStart = slab * context.slabDepth;
     const cubes = Math.min(context.slabDepth, cubeLayers - zStart);
-    const haloStart = Math.max(0, zStart - 1);
-    const haloEnd = Math.min(nz - 1, zStart + cubes + 1);
+    const halo =
+      params.surfaceField === "signed-distance"
+        ? Math.max(1, Math.round(params.distanceBandVoxels) + 1)
+        : 1;
+    const haloStart = Math.max(0, zStart - halo);
+    const haloEnd = Math.min(nz - 1, zStart + cubes + halo);
     const layers = haloEnd - haloStart + 1;
     const density = createDensitySlab(densityContext, haloStart, layers);
     peakDensityBytes = Math.max(peakDensityBytes, density.byteLength);
     const field: GridField = {
       dims: [nx, ny, layers],
+      globalDims: context.dims,
       min: [
         context.min[0],
         context.min[1],
@@ -251,13 +258,14 @@ export function extractStreamingMesh(
       iso,
       params.densityDenoiseIterations,
       false,
+      params.surfaceField === "signed-distance" ? params.distanceBandVoxels : 0,
     );
     denoisedVoxels += processed.denoisedVoxels;
     meshes.push(
       extractMarchingTetrahedra(
         processed.field,
         context.gaussians,
-        iso,
+        processed.extractionIso,
         params.sigmaRadius,
         {},
         {

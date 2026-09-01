@@ -12,7 +12,7 @@
   <a href="LICENSE"><img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-7aa2f7" /></a>
   <img alt="Rust and WebAssembly" src="https://img.shields.io/badge/core-Rust_%2B_WASM-5eead4" />
   <img alt="No backend" src="https://img.shields.io/badge/backend-none-9ece6a" />
-  <img alt="Version 0.2.0" src="https://img.shields.io/badge/version-0.2.0-bb9af7" />
+  <img alt="Version 0.3.0" src="https://img.shields.io/badge/version-0.3.0-bb9af7" />
 </p>
 
 <p align="center"><strong>Convert PLY, SPZ, SPLAT, KSPLAT, and packaged SOG Gaussian splats into colored, editable triangle meshes—entirely inside your browser.</strong></p>
@@ -56,8 +56,8 @@ All expensive work runs in a dedicated module Worker. WebGPU accelerates tiled d
 | Area | What is included |
 | --- | --- |
 | **Input** | ASCII/binary little-endian PLY plus SPZ, SPLAT, KSPLAT, and packaged SOG |
-| **Reconstruction** | Activated anisotropic Gaussians, visual crop box, robust bounds, chunked WebGPU/WASM, and a bounded-memory CPU slab mode |
-| **Mesh** | Marching Tetrahedra, density denoise, outside flood fill, small-hole caps, Taubin smoothing, quadric-guided decimation, topology diagnostics |
+| **Reconstruction** | Activated anisotropic Gaussians, visual crop box, robust bounds, sparse-tile culling, chunked WebGPU/WASM, and a bounded-memory CPU slab mode |
+| **Mesh** | Topology-consistent Marching Tetrahedra, optional narrow-band signed distance, density denoise, outside flood fill, small-hole caps, Taubin smoothing, quadric-guided decimation, topology diagnostics |
 | **Viewer** | Original / Mesh / Split modes, orbit controls, grid, axes, wireframe, shading, fit and reset |
 | **Export** | Colored indexed GLB, binary little-endian PLY, and OBJ generated with local Blob URLs |
 | **Safety** | Memory/device-limit checks, large-input warning, automatic Fast preset, progress, and cancellation by Worker termination |
@@ -71,7 +71,7 @@ The selected file is read by the browser and passed to a dedicated worker. It is
 
 ## Supported input
 
-| Format | v0.2 support |
+| Format | v0.3 support |
 | --- | --- |
 | **PLY** | Independently parsed ASCII and `binary_little_endian` Graphdeco-style vertex data. Arbitrary scalar order is accepted. |
 | **SPZ** | Packed Niantic SPZ decoded locally through Spark. SPZ v3 is continuously validated; current Spark decoding does not accept SPZ v4. |
@@ -100,6 +100,7 @@ npm run test        # Vitest unit tests
 npm run test:e2e    # Playwright smoke test
 npm run test:e2e:browsers # Chromium, Firefox, and WebKit
 npm run test:quality # opt-in local real-asset quality harness
+npm run test:quality:compare # density versus signed-distance topology
 npm run benchmark:summary # reviewed community GPU reports
 npm run lint        # Biome formatting/lint checks
 npm run typecheck
@@ -122,7 +123,7 @@ See [docs/algorithm.md](docs/algorithm.md) for equations. In short, the worker a
 | **Balanced** | ~96 | Default for small and medium object-centric assets |
 | **Detailed** | ~160 | High-detail runs after a successful lower-resolution pass |
 
-Higher resolution increases memory roughly with voxel count. Sigma radius controls support; opacity threshold removes weak splats; bounds quantile trims center outliers; the crop box limits conversion to a visible sub-volume. Density denoise removes isolated classifications, outside flood fill closes fully enclosed voids, and bounded boundary-loop caps repair small mesh holes. Mesh retention offers quadric-error-guided or vertex-clustering reduction. **Low-memory slab conversion** avoids retaining the complete density volume, but performs additional density passes and repeats them when iso changes. **Auto** prefers WebGPU and falls back to CPU/WASM; **WebGPU required** exposes adapter, device-loss, validation, and limit failures.
+Higher resolution increases memory roughly with voxel count. Sigma radius controls support; opacity threshold removes weak splats; bounds quantile trims center outliers; the crop box limits conversion to a visible sub-volume. Density denoise removes isolated classifications, outside flood fill closes fully enclosed voids, and bounded boundary-loop caps repair small mesh holes. Optional **narrow-band signed distance** re-expresses repaired occupancy around its boundary before extraction; it is not camera-derived TSDF fusion. Mesh retention offers quadric-error-guided or vertex-clustering reduction. **Low-memory slab conversion** avoids retaining the complete density volume, but performs additional density passes and repeats them when iso changes. **Auto** prefers WebGPU and falls back to CPU/WASM; **WebGPU required** exposes adapter, device-loss, validation, and limit failures.
 
 ## GPU benchmark and real-data validation
 
@@ -140,6 +141,7 @@ GLB is indexed and includes normals, RGB vertex colors, and a vertex-color-aware
 - Only SH DC color is used, so view-dependent appearance is lost.
 - Packed inputs are quantized or compressed and may differ slightly from their source training PLY. SOG support is limited to a single packaged `.sog`/`.zip` file.
 - WebGPU accelerates density sampling only. Spatial-bin construction, readback, extraction, repair, and export remain CPU work.
+- Signed-distance stabilization uses a deterministic narrow band around thresholded occupancy. It is not a metric TSDF reconstructed from cameras or depth maps.
 - Slab mode bounds resident density memory, but decoded Gaussians and the final mesh remain resident. Packed inputs are not yet decoded as an out-of-core stream.
 - Outside flood fill requires the complete occupancy volume and is therefore disabled with a visible warning in slab mode.
 - SPZ v4 currently produces an actionable unsupported-version error; use SPZ v3 or Graphdeco PLY.
@@ -168,8 +170,9 @@ React/TypeScript owns controls and state. A persistent module Worker decodes eac
 ## Roadmap
 
 - **v0.2 — shipped:** bounded-memory density slabs, occupancy cleanup, outside flood fill, hole caps, quadric-guided reduction, quality harness, and reproducible GPU reports.
-- **v0.3 — reconstruction:** narrow-band TSDF, adaptive/octree sampling, GPU-side bin construction, and genuinely streamed packed-format decoding.
-- **v0.4 — camera-aware:** COLMAP import, rendered depth fusion, optional texture baking, comparisons with GS2Mesh/GOF-style approaches.
+- **v0.3 — shipped:** topology-consistent tetrahedra cases, strict outside boundary handling, narrow-band signed-distance stabilization, sparse tile culling, mesh-health UI, and paired quality reports.
+- **v0.4 — reconstruction:** adaptive/octree sampling, metric distance transforms, GPU-side bin construction, and genuinely streamed packed-format decoding.
+- **v0.5 — camera-aware:** COLMAP import, rendered depth fusion, optional texture baking, comparisons with GS2Mesh/GOF-style approaches.
 
 ## Related work and references
 

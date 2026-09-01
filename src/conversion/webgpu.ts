@@ -51,6 +51,10 @@ fn main(
   let tz = z / tileEdge;
   let tileId = (tz * configU[4] + ty) * configU[3] + tx;
   let tileEntry = tileMeta[tileId];
+  if (tileEntry.y == 0u) {
+    density[localId] = 0.0;
+    return;
+  }
   let spacing = configF[3];
   let p = vec3f(
     configF[0] + f32(x) * spacing,

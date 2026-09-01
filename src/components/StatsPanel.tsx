@@ -188,6 +188,19 @@ export function StatsPanel({
             </small>
           </div>
         )}
+      {quality && (
+        <div className="elapsed-list">
+          <span>Mesh health</span>
+          <small>
+            {quality.boundaryEdges === 0 &&
+            quality.nonManifoldEdges === 0 &&
+            quality.degenerateFaces === 0
+              ? "No boundary, non-manifold, or degenerate elements detected"
+              : `${quality.boundaryEdges.toLocaleString()} boundary · ${quality.nonManifoldEdges.toLocaleString()} non-manifold · ${quality.degenerateFaces.toLocaleString()} degenerate`}
+            {" · diagnostics, not a watertightness proof"}
+          </small>
+        </div>
+      )}
     </div>
   );
 }

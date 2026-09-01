@@ -403,7 +403,7 @@ export default function App() {
       <main className="workspace">
         <aside className="control-column">
           <section className="intro">
-            <span className="eyebrow">BROWSER TOOL · v0.2.0</span>
+            <span className="eyebrow">BROWSER TOOL · v0.3.0</span>
             <h2>
               Turn splats into <em>editable geometry.</em>
             </h2>

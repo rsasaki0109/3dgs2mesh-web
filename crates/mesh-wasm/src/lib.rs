@@ -168,19 +168,29 @@ impl ConversionSession {
         smoothing_iterations: u32,
         denoise_iterations: u32,
         fill_enclosed_voids: bool,
+        distance_band_voxels: u32,
     ) -> Result<(), JsValue> {
         let f = self
             .field
             .as_ref()
             .ok_or_else(|| js_error("Voxelization has not run"))?;
-        let (processed, denoised, enclosed) =
-            process_density_field(f, self.iso, denoise_iterations, fill_enclosed_voids);
+        let (processed, denoised, enclosed) = process_density_field(
+            f,
+            self.iso,
+            denoise_iterations,
+            fill_enclosed_voids,
+            distance_band_voxels,
+        );
         self.denoised_voxel_count = denoised;
         self.enclosed_voxel_count = enclosed;
         let raw = extract_mesh(
             &processed,
             &self.gaussians,
-            self.iso,
+            if distance_band_voxels > 0 {
+                0.0
+            } else {
+                self.iso
+            },
             self.params.sigma_radius,
         );
         self.raw_vertex_count = raw.positions.len() / 3;

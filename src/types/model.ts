@@ -42,6 +42,8 @@ export interface ConversionParams {
   decimationMethod: "quadric" | "cluster";
   densityDenoiseIterations: number;
   fillEnclosedVoids: boolean;
+  surfaceField: "density" | "signed-distance";
+  distanceBandVoxels: number;
   maxHoleEdges: number;
   lowMemoryMode: boolean;
   slabDepth: number;
@@ -58,6 +60,7 @@ export interface DensityStats {
 
 export interface GridField {
   dims: [number, number, number];
+  globalDims?: [number, number, number];
   min: Vec3;
   max: Vec3;
   spacing: number;

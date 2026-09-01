@@ -366,6 +366,7 @@ async function extractAndReply(
       params.smoothingIterations,
       params.densityDenoiseIterations,
       params.fillEnclosedVoids,
+      params.surfaceField === "signed-distance" ? params.distanceBandVoxels : 0,
     );
     session.elapsed.extracting = performance.now() - extractStart;
     preCleanupVertices = session.wasm.raw_vertex_count();
@@ -386,13 +387,14 @@ async function extractAndReply(
       iso,
       params.densityDenoiseIterations,
       params.fillEnclosedVoids,
+      params.surfaceField === "signed-distance" ? params.distanceBandVoxels : 0,
     );
     denoisedVoxels = processed.denoisedVoxels;
     enclosedVoxelsFilled = processed.enclosedVoxelsFilled;
     const raw = extractMarchingTetrahedra(
       processed.field,
       session.gaussians,
-      iso,
+      processed.extractionIso,
       params.sigmaRadius,
     );
     preCleanupVertices = raw.positions.length / 3;

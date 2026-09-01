@@ -25,6 +25,8 @@ export const DEFAULT_PARAMS: ConversionParams = {
   decimationMethod: "quadric",
   densityDenoiseIterations: 0,
   fillEnclosedVoids: false,
+  surfaceField: "density",
+  distanceBandVoxels: 4,
   maxHoleEdges: 0,
   lowMemoryMode: false,
   slabDepth: 24,

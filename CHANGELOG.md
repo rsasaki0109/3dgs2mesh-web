@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0] - 2026-09-02
+
+- Make the six-tetrahedra cases explicit, preserve valid micro-triangles, orient faces from density gradients, and treat the global volume boundary as strictly outside the selected iso. Closed synthetic density and signed-distance fixtures now regress to zero boundary, non-manifold, and degenerate elements.
+- Add optional narrow-band signed-distance stabilization derived from repaired occupancy, with matching TypeScript, Rust/WASM, and halo-aware low-memory slab paths.
+- Cull empty spatial tiles before CPU density evaluation and return immediately for empty tiles in the WebGPU shader.
+- Add an in-app mesh-health summary and an opt-in raw-density versus signed-distance browser comparison report.
+
 ## [0.2.0] - 2026-09-01
 
 - Add conservative density denoise, outside flood fill, small boundary-loop caps, and quadric-error-guided mesh reduction.

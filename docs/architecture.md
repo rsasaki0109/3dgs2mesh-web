@@ -17,7 +17,7 @@ Graphdeco-style PLY is validated and activated by the project's independent pars
 
 ## Density backends
 
-The default `auto` backend first requests a WebGPU adapter. TypeScript builds deterministic 8×8×8 tile candidate lists and uploads flattened candidates and activated Gaussians. Density is dispatched and read back in chunks of at most 1,048,576 voxels, while the final Float32 field remains available for iso re-extraction. Thirty-two deterministic grid samples are recomputed with the CPU equation; excessive absolute and relative error rejects the GPU result. Marching Tetrahedra, coloring, cleanup, decimation, diagnostics, and export remain on the CPU.
+The default `auto` backend first requests a WebGPU adapter. TypeScript builds deterministic 8×8×8 tile candidate lists and uploads flattened candidates and activated Gaussians. Empty tiles return before Gaussian evaluation on both CPU and WebGPU. Density is dispatched and read back in chunks of at most 1,048,576 voxels, while the final Float32 field remains available for iso re-extraction. Thirty-two deterministic grid samples are recomputed with the CPU equation; excessive absolute and relative error rejects the GPU result. Marching Tetrahedra, optional narrow-band signed-distance stabilization, coloring, cleanup, decimation, diagnostics, and export remain on the CPU.
 
 If WebGPU is missing, no adapter can be acquired, a buffer/dispatch limit is exceeded, the device is lost, validation fails, or setup fails, `auto` reports a warning and uses the single-threaded Rust/WASM session. The `webgpu` setting makes those failures actionable instead of falling back. Neither route needs WebAssembly threads, SharedArrayBuffer, COOP/COEP, CUDA, or a server.
 
