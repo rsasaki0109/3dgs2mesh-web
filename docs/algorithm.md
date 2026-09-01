@@ -1,6 +1,6 @@
 # Density-field reconstruction
 
-The v0.1 pipeline is deliberately an approximation designed for one local 3DGS asset. It accepts PLY, SPZ v3, SPLAT, KSPLAT, and packaged SOG; it does not use training cameras or source images.
+The v0.2 pipeline is deliberately an approximation designed for one local 3DGS asset. It accepts PLY, SPZ v3, SPLAT, KSPLAT, and packaged SOG; it does not use training cameras or source images.
 
 ## Input and activation
 
@@ -39,12 +39,20 @@ Both density backends evaluate the same truncated anisotropic sum and store one 
 
 The field reports min, max, non-zero count, and a 32-bin histogram. Automatic iso is a deterministic non-zero density distribution threshold; manual mode uses the slider value. The surface stage splits every voxel cube into six consistently ordered tetrahedra. Each sign-changing tetrahedral edge is linearly interpolated and globally deduplicated by its pair of lattice vertex indices. Indexed triangles with zero area are skipped.
 
+## Bounded-memory slab mode
+
+The global bounds and 8³ candidate bins remain deterministic, but density is evaluated in Z slabs. A first pass finds the exact scalar range and non-zero count; a second pass builds the exact 32-bin histogram; after automatic iso selection, a final pass evaluates overlapping slab boundary layers and extracts each unique cube range. Boundary vertices are merged by a spacing-relative position key and normals are recomputed. Only one density slab is intended to be live at a time. Iso changes repeat these passes. Activated Gaussians and the final mesh still remain resident, so this is bounded-density processing rather than fully streamed input decoding.
+
+## Occupancy and mesh repair
+
+Optional denoise classifies samples at the selected iso and applies a conservative six-neighbour rule: isolated occupied samples with at most one occupied neighbour are removed, while empty samples with at least five occupied neighbours are filled. Outside flood fill starts from every empty boundary voxel; empty samples unreachable from the boundary are classified as enclosed and raised just above iso. This volume-wide operation is disabled in slab mode. Small, simple, unbranched mesh boundary loops can be capped by a color-averaged center fan. These operations improve common defects but do not prove watertightness or manifoldness.
+
 ## Normals and colors
 
 Central finite differences estimate the density gradient. Since density grows toward the interior, the nominal outward direction is `-∇density`; the mesh falls back to accumulated face normals when the gradient is too small. At an extracted vertex, nearby binned Gaussians weight their static colors by the same local density contribution. Neutral gray is used when no meaningful contributor exists.
 
 ## Cleanup and limits
 
-Triangle connectivity is computed through shared vertices. By default only the largest component remains; a minimum component face count is also available. Taubin's alternating positive/negative neighborhood passes provide conservative smoothing. Optional deterministic vertex clustering averages positions and colors, removes duplicate/degenerate triangles and unreferenced vertices, then recomputes normals. The UI reports before/after cleanup and decimation counts plus boundary edges, non-manifold edges, degenerate faces, and connected components.
+Triangle connectivity is computed through shared vertices. By default only the largest component remains; a minimum component face count is also available. Taubin's alternating positive/negative neighborhood passes provide conservative smoothing. Optional deterministic vertex clustering remains available. The default reducer accumulates face-plane quadrics, ranks mesh edges by quadric error, deterministically merges edge-connected clusters, removes duplicate/degenerate triangles and unreferenced vertices, then recomputes normals. It is a browser-oriented quadric-error-guided reducer, not a claim of topology-preserving remeshing. The UI reports before/after cleanup and decimation counts plus boundary edges, non-manifold edges, degenerate faces, and connected components.
 
-This does not guarantee manifold or watertight geometry. Packed formats may introduce quantization error. Learned stereo depth, opacity fields from training views, TSDF fusion, textures, higher-order SH, and view-dependent appearance remain out of scope for v0.1.
+This does not guarantee manifold or watertight geometry. Packed formats may introduce quantization error. Learned stereo depth, opacity fields from training views, TSDF fusion, textures, higher-order SH, and view-dependent appearance remain out of scope for v0.2.

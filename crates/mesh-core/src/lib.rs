@@ -1,7 +1,7 @@
 //! Independent, deterministic 3DGS density-field meshing core.
 //! The implementation intentionally does not depend on browser APIs.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 
 pub const SH_C0: f32 = 0.282_094_8;
@@ -439,6 +439,134 @@ pub fn gaussian_density(g: &Gaussian, p: Vec3, sigma_radius: f32) -> f32 {
     } else {
         0.0
     }
+}
+
+/// Cleans the thresholded occupancy and optionally fills empty regions that
+/// cannot reach the grid boundary. Original scalar samples are preserved
+/// unless their binary classification changes.
+pub fn process_density_field(
+    field: &GridField,
+    iso: f32,
+    denoise_iterations: u32,
+    fill_enclosed_voids: bool,
+) -> (GridField, usize, usize) {
+    if denoise_iterations == 0 && !fill_enclosed_voids {
+        return (field.clone(), 0, 0);
+    }
+    let [nx, ny, nz] = field.dims;
+    let mut result = field.clone();
+    let mut occupied = result
+        .density
+        .iter()
+        .map(|value| u8::from(*value >= iso))
+        .collect::<Vec<_>>();
+    let neighbours = [
+        (-1i32, 0i32, 0i32),
+        (1, 0, 0),
+        (0, -1, 0),
+        (0, 1, 0),
+        (0, 0, -1),
+        (0, 0, 1),
+    ];
+    let mut denoised = 0;
+    for _ in 0..denoise_iterations.min(3) {
+        let mut next = occupied.clone();
+        for z in 1..nz.saturating_sub(1) {
+            for y in 1..ny.saturating_sub(1) {
+                for x in 1..nx.saturating_sub(1) {
+                    let id = idx(field.dims, x, y, z);
+                    let count = neighbours
+                        .iter()
+                        .map(|(dx, dy, dz)| {
+                            occupied[idx(
+                                field.dims,
+                                (x as i32 + dx) as u32,
+                                (y as i32 + dy) as u32,
+                                (z as i32 + dz) as u32,
+                            )] as u32
+                        })
+                        .sum::<u32>();
+                    let value = if occupied[id] == 1 {
+                        u8::from(count > 1)
+                    } else {
+                        u8::from(count >= 5)
+                    };
+                    denoised += usize::from(value != occupied[id]);
+                    next[id] = value;
+                }
+            }
+        }
+        occupied = next;
+    }
+    let epsilon = (iso.abs() * 1.0e-4).max(EPS);
+    for (i, value) in result.density.iter_mut().enumerate() {
+        if occupied[i] != u8::from(*value >= iso) {
+            *value = if occupied[i] == 1 {
+                iso + epsilon
+            } else {
+                (iso - epsilon).max(0.0)
+            };
+        }
+    }
+    let mut filled = 0;
+    if fill_enclosed_voids {
+        let mut exterior = vec![false; occupied.len()];
+        let mut queue = VecDeque::new();
+        let enqueue = |id: usize, exterior: &mut [bool], queue: &mut VecDeque<usize>| {
+            if occupied[id] == 0 && !exterior[id] {
+                exterior[id] = true;
+                queue.push_back(id);
+            }
+        };
+        for z in 0..nz {
+            for y in 0..ny {
+                enqueue(idx(field.dims, 0, y, z), &mut exterior, &mut queue);
+                enqueue(idx(field.dims, nx - 1, y, z), &mut exterior, &mut queue);
+            }
+        }
+        for z in 0..nz {
+            for x in 0..nx {
+                enqueue(idx(field.dims, x, 0, z), &mut exterior, &mut queue);
+                enqueue(idx(field.dims, x, ny - 1, z), &mut exterior, &mut queue);
+            }
+        }
+        for y in 0..ny {
+            for x in 0..nx {
+                enqueue(idx(field.dims, x, y, 0), &mut exterior, &mut queue);
+                enqueue(idx(field.dims, x, y, nz - 1), &mut exterior, &mut queue);
+            }
+        }
+        while let Some(id) = queue.pop_front() {
+            let x = (id as u32) % nx;
+            let y = ((id as u32) / nx) % ny;
+            let z = (id as u32) / (nx * ny);
+            for (dx, dy, dz) in neighbours {
+                let px = x as i32 + dx;
+                let py = y as i32 + dy;
+                let pz = z as i32 + dz;
+                if px >= 0
+                    && py >= 0
+                    && pz >= 0
+                    && px < nx as i32
+                    && py < ny as i32
+                    && pz < nz as i32
+                {
+                    enqueue(
+                        idx(field.dims, px as u32, py as u32, pz as u32),
+                        &mut exterior,
+                        &mut queue,
+                    );
+                }
+            }
+        }
+        for (i, value) in result.density.iter_mut().enumerate() {
+            if occupied[i] == 0 && !exterior[i] {
+                *value = iso + epsilon;
+                filled += 1;
+            }
+        }
+    }
+    (result, denoised, filled)
 }
 
 pub fn automatic_iso(stats: DensityStats) -> f32 {
@@ -1149,6 +1277,25 @@ mod tests {
             histogram,
         });
         assert!(iso > 0.0 && iso < 1.0);
+    }
+    #[test]
+    fn fills_an_enclosed_density_void() {
+        let gs = vec![g()];
+        let mut field = make_grid(
+            &gs,
+            &ConversionParams {
+                resolution: 8,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        field.dims = [5, 5, 5];
+        field.density = vec![1.0; 125];
+        field.density[idx(field.dims, 2, 2, 2)] = 0.0;
+        let (processed, denoised, filled) = process_density_field(&field, 0.5, 0, true);
+        assert_eq!(denoised, 0);
+        assert_eq!(filled, 1);
+        assert!(processed.density[idx(field.dims, 2, 2, 2)] > 0.5);
     }
     #[test]
     fn cleanup_components() {

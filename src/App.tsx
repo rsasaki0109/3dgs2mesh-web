@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { buildBenchmarkReport } from "./benchmark/report";
 import { DropZone } from "./components/DropZone";
 import { ProgressPanel } from "./components/ProgressPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -14,6 +15,7 @@ import type {
   ConversionParams,
   ConversionStage,
   DensityStats,
+  GpuInfo,
   MeshData,
   MeshQuality,
   ParseReport,
@@ -38,7 +40,7 @@ interface Output {
   density: DensityStats;
   isoThreshold: number;
   elapsed: Record<string, number>;
-  backendUsed: "webgpu" | "wasm";
+  backendUsed: "webgpu" | "wasm" | "cpu-streaming";
   backendTimings?: {
     indexing: number;
     compute: number;
@@ -50,10 +52,14 @@ interface Output {
     maxRelativeError: number;
   };
   quality: MeshQuality;
+  gpuInfo?: GpuInfo;
+  lowMemoryUsed: boolean;
 }
 
 const LARGE_INPUT_BYTES = 100 * 1024 * 1024;
 const LARGE_INPUT_GAUSSIANS = 500_000;
+const VERY_LARGE_INPUT_BYTES = 250 * 1024 * 1024;
+const VERY_LARGE_GAUSSIANS = 1_000_000;
 
 export default function App() {
   const viewerHost = useRef<HTMLDivElement>(null);
@@ -110,7 +116,13 @@ export default function App() {
           size >= LARGE_INPUT_BYTES ||
           inspected.report.inputCount >= LARGE_INPUT_GAUSSIANS;
         if (largeInput)
-          setParams((current) => paramsForPreset("fast", current));
+          setParams((current) => ({
+            ...paramsForPreset("fast", current),
+            lowMemoryMode:
+              size >= VERY_LARGE_INPUT_BYTES ||
+              inspected.report.inputCount >= VERY_LARGE_GAUSSIANS ||
+              current.lowMemoryMode,
+          }));
         const owned = data.slice().buffer as ArrayBuffer;
         setSource({
           name,
@@ -270,6 +282,98 @@ export default function App() {
         outputFilename(source.name, "obj"),
       );
   };
+  const downloadBenchmark = () => {
+    if (!output || !source) return;
+    const report = buildBenchmarkReport(
+      {
+        sourceName: source.name,
+        sourceBytes: source.size,
+        report: output.report,
+        params,
+        backendUsed: output.backendUsed,
+        gpuInfo: output.gpuInfo,
+        dims: output.dims,
+        voxelCount: output.voxelCount,
+        density: output.density,
+        vertices: output.mesh.positions.length / 3,
+        triangles: output.mesh.indices.length / 3,
+        elapsed: output.elapsed,
+        backendTimings: output.backendTimings,
+        validation: output.validation,
+        quality: output.quality,
+      },
+      {
+        userAgent: navigator.userAgent,
+        hardwareConcurrency: navigator.hardwareConcurrency,
+        webGpuAvailable: "gpu" in navigator,
+      },
+    );
+    downloadBlob(
+      new Blob([`${JSON.stringify(report, null, 2)}\n`], {
+        type: "application/json",
+      }),
+      `3dgs2mesh-web-benchmark-${new Date().toISOString().slice(0, 10)}.json`,
+    );
+  };
+
+  const runBenchmark = useCallback(async () => {
+    if (running) return;
+    setRunning(true);
+    setError(undefined);
+    setStage("parsing");
+    setPercent(0);
+    const benchmarkParams: ConversionParams = {
+      ...paramsForPreset("fast", DEFAULT_PARAMS),
+      backend: "webgpu",
+      resolution: 64,
+      smoothingIterations: 0,
+      decimationRatio: 1,
+      lowMemoryMode: false,
+    };
+    try {
+      const bytes = createSyntheticSample();
+      worker.current?.dispose();
+      const client = new ConversionWorkerClient();
+      worker.current = client;
+      const inspected = await client.load(
+        bytes.slice().buffer,
+        "benchmark-sphere.ply",
+      );
+      const benchmarkSource: Source = {
+        name: "benchmark-sphere.ply",
+        size: bytes.byteLength,
+        bytes: bytes.slice().buffer,
+        report: inspected.report,
+        bounds: inspected.bounds,
+      };
+      setSource(benchmarkSource);
+      setParams(benchmarkParams);
+      if (viewer.current)
+        await viewer.current.setSplat(
+          bytes,
+          benchmarkSource.name,
+          inspected.previewPositions,
+          inspected.previewColors,
+        );
+      const result = await client.start(benchmarkParams, (event) => {
+        setStage(event.stage as ConversionStage);
+        setPercent(event.percent);
+        setDetail(event.detail);
+      });
+      setOutput(result);
+      setStage("ready");
+      setPercent(1);
+      viewer.current?.setMesh(result.mesh);
+      viewer.current?.setMode("mesh");
+      setMode("mesh");
+    } catch (caught) {
+      setError(
+        `WebGPU benchmark unavailable: ${friendlyError(caught)} You can still use CPU/WASM conversion.`,
+      );
+    } finally {
+      setRunning(false);
+    }
+  }, [running]);
 
   return (
     <div className="app-shell">
@@ -299,7 +403,7 @@ export default function App() {
       <main className="workspace">
         <aside className="control-column">
           <section className="intro">
-            <span className="eyebrow">BROWSER TOOL · v0.1.1</span>
+            <span className="eyebrow">BROWSER TOOL · v0.2.0</span>
             <h2>
               Turn splats into <em>editable geometry.</em>
             </h2>
@@ -318,6 +422,14 @@ export default function App() {
               onSample={sample}
               disabled={running}
             />
+            <button
+              className="sample-button"
+              type="button"
+              onClick={() => void runBenchmark()}
+              disabled={running}
+            >
+              Run reproducible WebGPU benchmark <span>↗</span>
+            </button>
             {source && (
               <div className="file-chip">
                 <span className="file-type">
@@ -416,9 +528,12 @@ export default function App() {
                   source.report.inputCount >= LARGE_INPUT_GAUSSIANS) && (
                   <span>
                     This {formatFileSize(source.size)} source is large, so Fast
-                    was selected automatically. Parsing, spatial bins, preview
-                    data, and mesh buffers require memory in addition to the
-                    density grid.
+                    was selected automatically.
+                    {(source.size >= VERY_LARGE_INPUT_BYTES ||
+                      source.report.inputCount >= VERY_LARGE_GAUSSIANS) &&
+                      " Low-memory slab conversion was also enabled."}{" "}
+                    Parsing, spatial bins, activated Gaussians, preview data,
+                    and mesh buffers still require memory.
                   </span>
                 )}
                 {source.report.warnings.map((warning) => (
@@ -604,6 +719,8 @@ export default function App() {
               backendTimings={output?.backendTimings}
               validation={output?.validation}
               quality={output?.quality}
+              gpuInfo={output?.gpuInfo}
+              lowMemoryUsed={output?.lowMemoryUsed}
             />
             <section className="export-card">
               <div className="section-heading">
@@ -638,6 +755,14 @@ export default function App() {
                   disabled={!output}
                 >
                   OBJ <span>↗</span>
+                </button>
+                <button
+                  className="button export secondary"
+                  type="button"
+                  onClick={downloadBenchmark}
+                  disabled={!output}
+                >
+                  Benchmark JSON <span>↗</span>
                 </button>
               </div>
             </section>

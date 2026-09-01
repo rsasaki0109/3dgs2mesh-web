@@ -1,7 +1,7 @@
 use js_sys::{Float32Array, Uint32Array, Uint8Array};
 use mesh_core::{
-    automatic_iso, cleanup_mesh, extract_mesh, make_grid, mesh_to_ply, parse_ply, ConversionParams,
-    Gaussian, GridField, Mesh, Vec3,
+    automatic_iso, cleanup_mesh, extract_mesh, make_grid, mesh_to_ply, parse_ply,
+    process_density_field, ConversionParams, Gaussian, GridField, Mesh, Vec3,
 };
 use wasm_bindgen::prelude::*;
 
@@ -19,6 +19,8 @@ pub struct ConversionSession {
     input_count: usize,
     raw_vertex_count: usize,
     raw_triangle_count: usize,
+    denoised_voxel_count: usize,
+    enclosed_voxel_count: usize,
 }
 
 #[wasm_bindgen]
@@ -56,6 +58,8 @@ impl ConversionSession {
             input_count,
             raw_vertex_count: 0,
             raw_triangle_count: 0,
+            denoised_voxel_count: 0,
+            enclosed_voxel_count: 0,
         })
     }
 
@@ -116,6 +120,8 @@ impl ConversionSession {
             input_count,
             raw_vertex_count: 0,
             raw_triangle_count: 0,
+            denoised_voxel_count: 0,
+            enclosed_voxel_count: 0,
         })
     }
 
@@ -160,12 +166,23 @@ impl ConversionSession {
         keep_largest: bool,
         min_component_faces: usize,
         smoothing_iterations: u32,
+        denoise_iterations: u32,
+        fill_enclosed_voids: bool,
     ) -> Result<(), JsValue> {
         let f = self
             .field
             .as_ref()
             .ok_or_else(|| js_error("Voxelization has not run"))?;
-        let raw = extract_mesh(f, &self.gaussians, self.iso, self.params.sigma_radius);
+        let (processed, denoised, enclosed) =
+            process_density_field(f, self.iso, denoise_iterations, fill_enclosed_voids);
+        self.denoised_voxel_count = denoised;
+        self.enclosed_voxel_count = enclosed;
+        let raw = extract_mesh(
+            &processed,
+            &self.gaussians,
+            self.iso,
+            self.params.sigma_radius,
+        );
         self.raw_vertex_count = raw.positions.len() / 3;
         self.raw_triangle_count = raw.indices.len() / 3;
         self.mesh = Some(cleanup_mesh(
@@ -208,6 +225,12 @@ impl ConversionSession {
     }
     pub fn raw_triangle_count(&self) -> usize {
         self.raw_triangle_count
+    }
+    pub fn denoised_voxel_count(&self) -> usize {
+        self.denoised_voxel_count
+    }
+    pub fn enclosed_voxel_count(&self) -> usize {
+        self.enclosed_voxel_count
     }
     pub fn grid_dimensions(&self) -> Result<Uint32Array, JsValue> {
         let f = self

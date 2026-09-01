@@ -11,6 +11,12 @@ test("synthetic sample converts to an editable mesh", async ({ page }) => {
   await page.getByText("Enable crop box").click();
   await page.getByLabel("Crop X minimum").fill("0.1");
   await page.getByLabel("Crop X maximum").fill("0.9");
+  await page
+    .getByRole("slider", { name: "Density denoise iterations" })
+    .fill("1");
+  await page.getByText("Fill enclosed density voids").click();
+  await page.getByRole("slider", { name: /Fill mesh holes up to/ }).fill("12");
+  await page.getByRole("slider", { name: "Mesh retention" }).fill("0.75");
   await page.getByRole("button", { name: /Convert to mesh/ }).click();
   await expect(page.getByTestId("ready-state")).toBeVisible({
     timeout: 90_000,
@@ -32,6 +38,9 @@ test("synthetic sample converts to an editable mesh", async ({ page }) => {
     page.getByRole("button", { name: /Download GLB/ }),
   ).toBeEnabled();
   await expect(page.getByRole("button", { name: /Binary PLY/ })).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: /Benchmark JSON/ }),
+  ).toBeEnabled();
   await page.getByRole("button", { name: "Toggle wireframe" }).click();
   expect(errors).toEqual([]);
 });

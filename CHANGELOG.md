@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0] - 2026-09-01
+
+- Add conservative density denoise, outside flood fill, small boundary-loop caps, and quadric-error-guided mesh reduction.
+- Add bounded-memory Z-slab density statistics and extraction with deterministic seam welding.
+- Add reproducible local WebGPU benchmark JSON, adapter reporting, a community GPU issue template, and reviewed-result summarization.
+- Add an opt-in real-asset quality harness and expose repair, topology, and peak-density statistics in the UI.
+
 ## [0.1.1] - 2026-09-01
 
 - Decode each source once in the conversion worker and return only a bounded preview sample to the UI.

@@ -61,11 +61,11 @@ dependencies = [
 
 [[package]]
 name = "mesh-core"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "mesh-wasm"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "console_error_panic_hook",
  "js-sys",

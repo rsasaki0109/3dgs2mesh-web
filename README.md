@@ -12,7 +12,7 @@
   <a href="LICENSE"><img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-7aa2f7" /></a>
   <img alt="Rust and WebAssembly" src="https://img.shields.io/badge/core-Rust_%2B_WASM-5eead4" />
   <img alt="No backend" src="https://img.shields.io/badge/backend-none-9ece6a" />
-  <img alt="Version 0.1.1" src="https://img.shields.io/badge/version-0.1.1-bb9af7" />
+  <img alt="Version 0.2.0" src="https://img.shields.io/badge/version-0.2.0-bb9af7" />
 </p>
 
 <p align="center"><strong>Convert PLY, SPZ, SPLAT, KSPLAT, and packaged SOG Gaussian splats into colored, editable triangle meshes—entirely inside your browser.</strong></p>
@@ -43,7 +43,7 @@ Local 3DGS asset
 Parse + activate ──► robust bounds ──► 8³ spatial bins
                                             │
                                             ▼
-GLB / PLY / OBJ ◄── cleanup + color ◄── density field (WebGPU or WASM)
+GLB / PLY / OBJ ◄── repair + QEM ◄── density field (WebGPU, WASM, or slabs)
                                             │
                                             ▼
                                   Marching Tetrahedra
@@ -56,8 +56,8 @@ All expensive work runs in a dedicated module Worker. WebGPU accelerates tiled d
 | Area | What is included |
 | --- | --- |
 | **Input** | ASCII/binary little-endian PLY plus SPZ, SPLAT, KSPLAT, and packaged SOG |
-| **Reconstruction** | Activated anisotropic Gaussians, visual crop box, robust bounds, chunked WebGPU or CPU density field, deterministic automatic iso |
-| **Mesh** | Indexed Marching Tetrahedra, gradient normals, SH-DC colors, component filtering, Taubin smoothing, decimation, topology diagnostics |
+| **Reconstruction** | Activated anisotropic Gaussians, visual crop box, robust bounds, chunked WebGPU/WASM, and a bounded-memory CPU slab mode |
+| **Mesh** | Marching Tetrahedra, density denoise, outside flood fill, small-hole caps, Taubin smoothing, quadric-guided decimation, topology diagnostics |
 | **Viewer** | Original / Mesh / Split modes, orbit controls, grid, axes, wireframe, shading, fit and reset |
 | **Export** | Colored indexed GLB, binary little-endian PLY, and OBJ generated with local Blob URLs |
 | **Safety** | Memory/device-limit checks, large-input warning, automatic Fast preset, progress, and cancellation by Worker termination |
@@ -71,7 +71,7 @@ The selected file is read by the browser and passed to a dedicated worker. It is
 
 ## Supported input
 
-| Format | v0.1 support |
+| Format | v0.2 support |
 | --- | --- |
 | **PLY** | Independently parsed ASCII and `binary_little_endian` Graphdeco-style vertex data. Arbitrary scalar order is accepted. |
 | **SPZ** | Packed Niantic SPZ decoded locally through Spark. SPZ v3 is continuously validated; current Spark decoding does not accept SPZ v4. |
@@ -98,6 +98,9 @@ Useful commands:
 npm run build       # wasm-pack (when available), typecheck, and Vite build
 npm run test        # Vitest unit tests
 npm run test:e2e    # Playwright smoke test
+npm run test:e2e:browsers # Chromium, Firefox, and WebKit
+npm run test:quality # opt-in local real-asset quality harness
+npm run benchmark:summary # reviewed community GPU reports
 npm run lint        # Biome formatting/lint checks
 npm run typecheck
 npm run check       # frontend checks plus Rust checks
@@ -105,7 +108,7 @@ npm run check       # frontend checks plus Rust checks
 
 The development and production builds both compile and use the Rust/WASM core. Install the target with `rustup target add wasm32-unknown-unknown` and install `wasm-pack` before running the root commands.
 
-Maintainers can run the opt-in real-data diagnostics described in [docs/real-data-validation.md](docs/real-data-validation.md). External fixtures remain local and are never committed.
+Maintainers can run the opt-in real-data diagnostics described in [docs/real-data-validation.md](docs/real-data-validation.md) and the structured [quality harness](docs/quality-validation.md). External fixtures remain local and are never committed.
 
 ## How the algorithm works
 
@@ -119,7 +122,11 @@ See [docs/algorithm.md](docs/algorithm.md) for equations. In short, the worker a
 | **Balanced** | ~96 | Default for small and medium object-centric assets |
 | **Detailed** | ~160 | High-detail runs after a successful lower-resolution pass |
 
-Higher resolution increases memory roughly with the number of voxels, not linearly with the displayed number. Sigma radius controls support; opacity threshold removes weak splats; bounds quantile trims center outliers; the normalized crop box limits conversion to a visible sub-volume; mesh retention enables deterministic vertex-clustering decimation. **Auto** prefers WebGPU and falls back to CPU/WASM; **WebGPU required** exposes adapter, device-loss, validation, and limit failures. WebGPU processes the field in bounded chunks and checks sampled results against the CPU equation. Expert resolutions up to 256 can still be expensive. Inputs of at least 100 MiB or 500,000 source Gaussians select Fast automatically.
+Higher resolution increases memory roughly with voxel count. Sigma radius controls support; opacity threshold removes weak splats; bounds quantile trims center outliers; the crop box limits conversion to a visible sub-volume. Density denoise removes isolated classifications, outside flood fill closes fully enclosed voids, and bounded boundary-loop caps repair small mesh holes. Mesh retention offers quadric-error-guided or vertex-clustering reduction. **Low-memory slab conversion** avoids retaining the complete density volume, but performs additional density passes and repeats them when iso changes. **Auto** prefers WebGPU and falls back to CPU/WASM; **WebGPU required** exposes adapter, device-loss, validation, and limit failures.
+
+## GPU benchmark and real-data validation
+
+**Run reproducible WebGPU benchmark** converts the deterministic bundled sample at a fixed Fast configuration. **Benchmark JSON** downloads adapter information, browser/CPU concurrency, parameters, stage timings, GPU validation error, and topology statistics locally. Nothing is submitted automatically. See [GPU benchmarking](docs/gpu-benchmarking.md), the [GPU compatibility issue template](.github/ISSUE_TEMPLATE/gpu_compatibility.yml), and [real-data quality validation](docs/quality-validation.md).
 
 ## Exports
 
@@ -128,17 +135,19 @@ GLB is indexed and includes normals, RGB vertex colors, and a vertex-color-aware
 ## Known limitations
 
 - This is a density-field approximation. It is not GS2Mesh, SuGaR, GOF, or FGGS-LiDAR and has no learned stereo/depth fusion.
-- No camera/COLMAP loading, textures, texture baking, higher-order SH rendering, TSDF, denoising, outside flood fill, or guaranteed watertight/manifold topology.
+- No camera/COLMAP loading, textures, texture baking, higher-order SH rendering, TSDF, or guaranteed watertight/manifold topology.
 - Thin geometry, transparent/reflective surfaces, weakly observed regions, extreme scales, and very large scenes may reconstruct poorly or require cropping.
 - Only SH DC color is used, so view-dependent appearance is lost.
 - Packed inputs are quantized or compressed and may differ slightly from their source training PLY. SOG support is limited to a single packaged `.sog`/`.zip` file.
-- WebGPU accelerates density sampling only. Spatial-bin construction, readback, Marching Tetrahedra, cleanup, and export remain CPU work in v0.1.
+- WebGPU accelerates density sampling only. Spatial-bin construction, readback, extraction, repair, and export remain CPU work.
+- Slab mode bounds resident density memory, but decoded Gaussians and the final mesh remain resident. Packed inputs are not yet decoded as an out-of-core stream.
+- Outside flood fill requires the complete occupancy volume and is therefore disabled with a visible warning in slab mode.
 - SPZ v4 currently produces an actionable unsupported-version error; use SPZ v3 or Graphdeco PLY.
 - The preview adapter uses [Spark](https://github.com/sparkjsdev/spark) when available and falls back to colored points if initialization fails.
 
 ## Browser support and performance
 
-Use a recent Chromium, Firefox, or Safari with WebAssembly and WebGL2. Chromium, Playwright Firefox, and Playwright WebKit smoke tests run in the compatibility workflow. WebGPU acceleration depends on browser, OS, driver, and device limits; unsupported devices automatically use CPU/WASM. Conversion runs in a dedicated worker and does not require SharedArrayBuffer, COOP/COEP, CUDA, or GPU compute. The app reports measured bin/compute/readback timings without invented benchmarks.
+Use a recent Chromium, Firefox, or Safari with WebAssembly and WebGL2. Chromium, Playwright Firefox, and Playwright WebKit smoke tests run in the compatibility workflow. WebGPU acceleration depends on browser, OS, driver, and device limits; unsupported devices automatically use CPU/WASM. The app reports only measurements produced on the current device. The repository intentionally contains no invented GPU results; reviewed community JSON reports can be summarized with `npm run benchmark:summary`.
 
 ## Architecture
 
@@ -147,7 +156,8 @@ React UI ─────────────── Three.js / Spark viewer
    │
    └── module Worker ──► Spark packed-format decoder
           │
-          ├── WebGPU tiled density ──► CPU extraction + cleanup
+          ├── WebGPU tiled density ──► CPU extraction + repair
+          ├── bounded CPU slabs ─────► merged slab surfaces
           └── mesh-wasm ─────────────► mesh-core
                  thin                   pure Rust
                  bindings               math + geometry + PLY export
@@ -157,8 +167,8 @@ React/TypeScript owns controls and state. A persistent module Worker decodes eac
 
 ## Roadmap
 
-- **v0.2 — scale:** flattened/streamed Gaussian storage, out-of-core input decoding, GPU-side bin construction, and adaptive mesh simplification.
-- **v0.3 — cleaner:** occupancy denoising, outside flood fill, narrow-band TSDF, and more consistently closed meshes.
+- **v0.2 — shipped:** bounded-memory density slabs, occupancy cleanup, outside flood fill, hole caps, quadric-guided reduction, quality harness, and reproducible GPU reports.
+- **v0.3 — reconstruction:** narrow-band TSDF, adaptive/octree sampling, GPU-side bin construction, and genuinely streamed packed-format decoding.
 - **v0.4 — camera-aware:** COLMAP import, rendered depth fusion, optional texture baking, comparisons with GS2Mesh/GOF-style approaches.
 
 ## Related work and references

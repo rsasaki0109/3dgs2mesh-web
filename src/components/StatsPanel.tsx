@@ -1,5 +1,10 @@
 import { formatBytes } from "../conversion/params";
-import type { DensityStats, MeshQuality, ParseReport } from "../types/model";
+import type {
+  DensityStats,
+  GpuInfo,
+  MeshQuality,
+  ParseReport,
+} from "../types/model";
 
 interface Props {
   fileSize: number;
@@ -11,7 +16,7 @@ interface Props {
   vertexCount?: number;
   triangleCount?: number;
   elapsed?: Record<string, number>;
-  backendUsed?: "webgpu" | "wasm";
+  backendUsed?: "webgpu" | "wasm" | "cpu-streaming";
   backendTimings?: { indexing: number; compute: number; readback: number };
   validation?: {
     samples: number;
@@ -19,6 +24,8 @@ interface Props {
     maxRelativeError: number;
   };
   quality?: MeshQuality;
+  gpuInfo?: GpuInfo;
+  lowMemoryUsed?: boolean;
 }
 const elapsedLabel = (ms?: number) =>
   ms === undefined
@@ -40,6 +47,8 @@ export function StatsPanel({
   backendTimings,
   validation,
   quality,
+  gpuInfo,
+  lowMemoryUsed,
 }: Props) {
   return (
     <div className="stats-panel">
@@ -52,7 +61,9 @@ export function StatsPanel({
               ? "WebGPU"
               : backendUsed === "wasm"
                 ? "CPU / WASM"
-                : "—"
+                : backendUsed === "cpu-streaming"
+                  ? "CPU streaming slabs"
+                  : "—"
           }
         />
         <Stat
@@ -139,6 +150,31 @@ export function StatsPanel({
             </small>
           </div>
         )}
+      {quality &&
+        (quality.denoisedVoxels > 0 ||
+          quality.enclosedVoxelsFilled > 0 ||
+          quality.holesFilled > 0) && (
+          <div className="elapsed-list">
+            <span>Repair</span>
+            <small>
+              {quality.denoisedVoxels.toLocaleString()} denoised voxels ·{" "}
+              {quality.enclosedVoxelsFilled.toLocaleString()} enclosed voxels ·{" "}
+              {quality.holesFilled.toLocaleString()} capped holes
+            </small>
+          </div>
+        )}
+      {(gpuInfo || lowMemoryUsed) && (
+        <div className="elapsed-list">
+          <span>{lowMemoryUsed ? "Low-memory slabs" : "GPU adapter"}</span>
+          <small>
+            {lowMemoryUsed
+              ? `peak density ${formatBytes(quality?.peakDensityBytes ?? 0)}`
+              : [gpuInfo?.vendor, gpuInfo?.architecture, gpuInfo?.device]
+                  .filter(Boolean)
+                  .join(" · ") || "Adapter details unavailable"}
+          </small>
+        </div>
+      )}
       {quality &&
         (quality.preCleanupVertices !== quality.preDecimationVertices ||
           quality.preCleanupTriangles !== quality.preDecimationTriangles) && (

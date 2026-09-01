@@ -1,0 +1,35 @@
+name: GPU compatibility report
+description: Share a local WebGPU benchmark JSON without sharing your 3DGS asset.
+title: "[GPU] "
+labels: ["gpu-compatibility"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Run **Run reproducible WebGPU benchmark**, download **Benchmark JSON**, and attach it below. The deterministic sample contains no private source asset.
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      placeholder: Chrome 140
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Windows 11 / macOS 15 / Ubuntu 24.04
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Benchmark JSON
+      description: Drag the downloaded JSON here, or paste its contents. Review it before sharing because it contains a browser user-agent string.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Device loss, fallback, visual artifacts, or anything unusual.

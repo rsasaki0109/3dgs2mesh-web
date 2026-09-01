@@ -361,8 +361,10 @@ function colorAt(
   p: Vec3,
   sigmaRadius: number,
 ) {
-  const coord = [0, 1, 2].map((axis) =>
-    Math.max(0, Math.floor((p[axis] - field.min[axis]) / field.spacing)),
+  const coord = [0, 1, 2].map(
+    (axis) =>
+      Math.max(0, Math.floor((p[axis] - field.min[axis]) / field.spacing)) +
+      (field.gridOffset?.[axis] ?? 0),
   );
   const candidates = tileCandidates(field.index, coord[0], coord[1], coord[2]);
   let weight = 0;
@@ -385,6 +387,7 @@ export function extractMarchingTetrahedra(
   iso: number,
   sigmaRadius: number,
   callbacks: EngineCallbacks = {},
+  zRange?: { start: number; end: number },
 ): MeshData {
   const positions: number[] = [];
   const normals: number[] = [];
@@ -410,6 +413,8 @@ export function extractMarchingTetrahedra(
     [0, 4, 5, 6],
   ];
   const [nx, ny, nz] = field.dims;
+  const zStart = Math.max(0, Math.min(nz - 1, zRange?.start ?? 0));
+  const zEnd = Math.max(zStart, Math.min(nz - 1, zRange?.end ?? nz - 1));
   const getEdgeVertex = (
     a: [number, number, number],
     b: [number, number, number],
@@ -439,7 +444,7 @@ export function extractMarchingTetrahedra(
     edgeVertices.set(key, vertex);
     return vertex;
   };
-  for (let z = 0; z < nz - 1; z += 1) {
+  for (let z = zStart; z < zEnd; z += 1) {
     checkCancelled(callbacks);
     for (let y = 0; y < ny - 1; y += 1)
       for (let x = 0; x < nx - 1; x += 1) {
@@ -485,7 +490,10 @@ export function extractMarchingTetrahedra(
             );
         }
       }
-    callbacks.onStage?.("extracting", (z + 1) / Math.max(1, nz - 1));
+    callbacks.onStage?.(
+      "extracting",
+      (z - zStart + 1) / Math.max(1, zEnd - zStart),
+    );
   }
   const mesh = {
     positions: new Float32Array(positions),
@@ -660,7 +668,7 @@ export function recomputeNormals(mesh: MeshData) {
 }
 
 /** Deterministic vertex-clustering decimation for interactive export sizing. */
-export function decimateMesh(mesh: MeshData, ratio: number): MeshData {
+export function clusterDecimateMesh(mesh: MeshData, ratio: number): MeshData {
   const vertexCount = mesh.positions.length / 3;
   const target = Math.max(
     4,
@@ -741,6 +749,229 @@ export function decimateMesh(mesh: MeshData, ratio: number): MeshData {
   const compact = cleanupMesh(result, false, 1, 0);
   recomputeNormals(compact);
   return compact;
+}
+
+type Quadric = [
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+];
+
+function quadricPosition(q: Quadric, a: Vec3, b: Vec3): Vec3 {
+  const a00 = q[0];
+  const a01 = q[1];
+  const a02 = q[2];
+  const a11 = q[4];
+  const a12 = q[5];
+  const a22 = q[7];
+  const bx = -q[3];
+  const by = -q[6];
+  const bz = -q[8];
+  const det =
+    a00 * (a11 * a22 - a12 * a12) -
+    a01 * (a01 * a22 - a12 * a02) +
+    a02 * (a01 * a12 - a11 * a02);
+  if (Math.abs(det) < 1e-12) return mul(add(a, b), 0.5);
+  const x =
+    (bx * (a11 * a22 - a12 * a12) -
+      a01 * (by * a22 - a12 * bz) +
+      a02 * (by * a12 - a11 * bz)) /
+    det;
+  const y =
+    (a00 * (by * a22 - a12 * bz) -
+      bx * (a01 * a22 - a12 * a02) +
+      a02 * (a01 * bz - by * a02)) /
+    det;
+  const z =
+    (a00 * (a11 * bz - by * a12) -
+      a01 * (a01 * bz - by * a02) +
+      bx * (a01 * a12 - a11 * a02)) /
+    det;
+  return [x, y, z].every(Number.isFinite) ? [x, y, z] : mul(add(a, b), 0.5);
+}
+
+function quadricCost(q: Quadric, p: Vec3) {
+  const [x, y, z] = p;
+  return (
+    q[0] * x * x +
+    2 * q[1] * x * y +
+    2 * q[2] * x * z +
+    2 * q[3] * x +
+    q[4] * y * y +
+    2 * q[5] * y * z +
+    2 * q[6] * y +
+    q[7] * z * z +
+    2 * q[8] * z +
+    q[9]
+  );
+}
+
+/** Deterministic quadric-error-guided edge clustering. */
+export function quadricDecimateMesh(mesh: MeshData, ratio: number): MeshData {
+  const vertexCount = mesh.positions.length / 3;
+  const target = Math.max(
+    4,
+    Math.floor(vertexCount * Math.max(0.05, Math.min(1, ratio))),
+  );
+  if (target >= vertexCount || mesh.indices.length < 6) return mesh;
+  const quadrics = Array.from(
+    { length: vertexCount },
+    () => Array.from({ length: 10 }, () => 0) as Quadric,
+  );
+  const edges = new Map<string, [number, number]>();
+  for (let i = 0; i < mesh.indices.length; i += 3) {
+    const vertices = [
+      mesh.indices[i],
+      mesh.indices[i + 1],
+      mesh.indices[i + 2],
+    ];
+    const points = vertices.map((vertex): Vec3 => {
+      const offset = vertex * 3;
+      return [
+        mesh.positions[offset],
+        mesh.positions[offset + 1],
+        mesh.positions[offset + 2],
+      ];
+    });
+    const normal = normalize(
+      cross(sub(points[1], points[0]), sub(points[2], points[0])),
+    );
+    if (dot(normal, normal) < EPSILON) continue;
+    const d = -dot(normal, points[0]);
+    const [x, y, z] = normal;
+    const plane: Quadric = [
+      x * x,
+      x * y,
+      x * z,
+      x * d,
+      y * y,
+      y * z,
+      y * d,
+      z * z,
+      z * d,
+      d * d,
+    ];
+    for (const vertex of vertices)
+      for (let q = 0; q < 10; q += 1) quadrics[vertex][q] += plane[q];
+    for (const [a, b] of [
+      [vertices[0], vertices[1]],
+      [vertices[1], vertices[2]],
+      [vertices[2], vertices[0]],
+    ] as [number, number][]) {
+      const edge: [number, number] = a < b ? [a, b] : [b, a];
+      edges.set(`${edge[0]}:${edge[1]}`, edge);
+    }
+  }
+  const position = Array.from({ length: vertexCount }, (_, vertex): Vec3 => {
+    const offset = vertex * 3;
+    return [
+      mesh.positions[offset],
+      mesh.positions[offset + 1],
+      mesh.positions[offset + 2],
+    ];
+  });
+  const colors = Array.from({ length: vertexCount }, (_, vertex): Vec3 => {
+    const offset = vertex * 3;
+    return [
+      mesh.colors[offset],
+      mesh.colors[offset + 1],
+      mesh.colors[offset + 2],
+    ];
+  });
+  const candidates = [...edges.values()].map(([a, b]) => {
+    const q = quadrics[a].map(
+      (value, index) => value + quadrics[b][index],
+    ) as Quadric;
+    const p = quadricPosition(q, position[a], position[b]);
+    return { a, b, cost: quadricCost(q, p) };
+  });
+  candidates.sort(
+    (left, right) =>
+      left.cost - right.cost || left.a - right.a || left.b - right.b,
+  );
+  const parent = Array.from({ length: vertexCount }, (_, index) => index);
+  const weights = Array.from({ length: vertexCount }, () => 1);
+  const find = (value: number): number => {
+    while (parent[value] !== value) {
+      parent[value] = parent[parent[value]];
+      value = parent[value];
+    }
+    return value;
+  };
+  let clusters = vertexCount;
+  for (const candidate of candidates) {
+    if (clusters <= target) break;
+    let a = find(candidate.a);
+    let b = find(candidate.b);
+    if (a === b) continue;
+    if (b < a) [a, b] = [b, a];
+    const q = quadrics[a].map(
+      (value, index) => value + quadrics[b][index],
+    ) as Quadric;
+    const p = quadricPosition(q, position[a], position[b]);
+    const total = weights[a] + weights[b];
+    colors[a] = [0, 1, 2].map(
+      (axis) =>
+        (colors[a][axis] * weights[a] + colors[b][axis] * weights[b]) / total,
+    ) as Vec3;
+    quadrics[a] = q;
+    position[a] = p;
+    weights[a] = total;
+    parent[b] = a;
+    clusters -= 1;
+  }
+  const rootToVertex = new Map<number, number>();
+  const outPositions: number[] = [];
+  const outColors: number[] = [];
+  const remap = new Uint32Array(vertexCount);
+  for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+    const root = find(vertex);
+    let mapped = rootToVertex.get(root);
+    if (mapped === undefined) {
+      mapped = rootToVertex.size;
+      rootToVertex.set(root, mapped);
+      outPositions.push(...position[root]);
+      outColors.push(...colors[root]);
+    }
+    remap[vertex] = mapped;
+  }
+  const outIndices: number[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < mesh.indices.length; i += 3) {
+    const a = remap[mesh.indices[i]];
+    const b = remap[mesh.indices[i + 1]];
+    const c = remap[mesh.indices[i + 2]];
+    if (a === b || b === c || c === a) continue;
+    const key = [a, b, c].sort((left, right) => left - right).join(":");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    outIndices.push(a, b, c);
+  }
+  const result: MeshData = {
+    positions: new Float32Array(outPositions),
+    colors: new Float32Array(outColors),
+    normals: new Float32Array(outPositions.length),
+    indices: new Uint32Array(outIndices),
+  };
+  recomputeNormals(result);
+  return cleanupMesh(result, false, 1, 0);
+}
+
+export function decimateMesh(
+  mesh: MeshData,
+  ratio: number,
+  method: "quadric" | "cluster" = "quadric",
+) {
+  return method === "quadric"
+    ? quadricDecimateMesh(mesh, ratio)
+    : clusterDecimateMesh(mesh, ratio);
 }
 
 export function analyzeMesh(mesh: MeshData) {

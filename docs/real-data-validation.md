@@ -16,6 +16,8 @@ REAL_PLY=/absolute/path/to/point_cloud.ply npm run test:e2e
 
 On PowerShell, use `$env:REAL_PLY = 'C:\\absolute\\path\\point_cloud.ply'` before running `npm run test:e2e`.
 
+For the structured v0.2 reconstruction report (including repair, topology, timing, and export assertions), set `QUALITY_INPUT` and run `npm run test:quality` as described in [quality-validation.md](quality-validation.md).
+
 For a real packed asset, set `REAL_SPLAT_INPUT` to an `.spz`, `.ksplat`, or packaged `.sog`/`.zip` file. This opt-in browser check verifies local decoding and leaves the fixture outside the repository:
 
 ```bash
@@ -41,4 +43,4 @@ Two unmodified `binary_little_endian` Graphdeco-style PLY files were exercised l
 
 The first case exposed a sparse-histogram edge case where automatic iso selection returned the lower edge of the first bin (`0`). The algorithm now uses the selected bin midpoint, with matching Rust and TypeScript regression tests. These results establish parser and pipeline interoperability only; they do not measure reconstruction accuracy.
 
-The complete Flowers scene also converted at resolution 64 to 46,872 vertices and 95,164 triangles. Its mesh extraction and cleanup took substantially longer than the cropped diagnostics on the validation machine. Consequently, inputs of at least 100 MiB or 500,000 source Gaussians now select Fast automatically; smaller inputs retain Balanced as the default. This is a conservative UX guard, not a performance guarantee.
+The complete Flowers scene also converted at resolution 64 to 46,872 vertices and 95,164 triangles. Its mesh extraction and cleanup took substantially longer than the cropped diagnostics on the validation machine. The current UI selects Fast and low-memory slab mode for inputs of at least 250 MiB or 1,000,000 source Gaussians; smaller inputs retain Balanced by default. This is a conservative UX guard, not a performance guarantee.

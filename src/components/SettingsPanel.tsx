@@ -52,6 +52,7 @@ export function SettingsPanel({ params, onChange, onPreset, disabled }: Props) {
           <label>
             Grid resolution <output>{params.resolution}</output>
             <input
+              aria-label="Grid resolution"
               type="range"
               min="32"
               max="256"
@@ -215,6 +216,7 @@ export function SettingsPanel({ params, onChange, onPreset, disabled }: Props) {
           <label>
             Smoothing iterations <output>{params.smoothingIterations}</output>
             <input
+              aria-label="Smoothing iterations"
               type="range"
               min="0"
               max="5"
@@ -230,6 +232,7 @@ export function SettingsPanel({ params, onChange, onPreset, disabled }: Props) {
             Mesh retention{" "}
             <output>{Math.round(params.decimationRatio * 100)}%</output>
             <input
+              aria-label="Mesh retention"
               type="range"
               min="0.1"
               max="1"
@@ -239,6 +242,89 @@ export function SettingsPanel({ params, onChange, onPreset, disabled }: Props) {
                 set("decimationRatio", Number(event.target.value))
               }
               disabled={disabled}
+            />
+          </label>
+          <label>
+            Decimation method
+            <select
+              value={params.decimationMethod}
+              onChange={(event) =>
+                set(
+                  "decimationMethod",
+                  event.target.value as ConversionParams["decimationMethod"],
+                )
+              }
+              disabled={disabled || params.decimationRatio >= 0.999}
+            >
+              <option value="quadric">Quadric-error guided</option>
+              <option value="cluster">Vertex clustering</option>
+            </select>
+          </label>
+          <label>
+            Density denoise iterations{" "}
+            <output>{params.densityDenoiseIterations}</output>
+            <input
+              aria-label="Density denoise iterations"
+              type="range"
+              min="0"
+              max="3"
+              step="1"
+              value={params.densityDenoiseIterations}
+              onChange={(event) =>
+                set("densityDenoiseIterations", Number(event.target.value))
+              }
+              disabled={disabled}
+            />
+          </label>
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={params.fillEnclosedVoids}
+              onChange={(event) =>
+                set("fillEnclosedVoids", event.target.checked)
+              }
+              disabled={disabled}
+            />{" "}
+            Fill enclosed density voids
+          </label>
+          <label>
+            Fill mesh holes up to{" "}
+            <output>
+              {params.maxHoleEdges ? `${params.maxHoleEdges} edges` : "Off"}
+            </output>
+            <input
+              aria-label="Fill mesh holes up to"
+              type="range"
+              min="0"
+              max="64"
+              step="4"
+              value={params.maxHoleEdges}
+              onChange={(event) =>
+                set("maxHoleEdges", Number(event.target.value))
+              }
+              disabled={disabled}
+            />
+          </label>
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={params.lowMemoryMode}
+              onChange={(event) => set("lowMemoryMode", event.target.checked)}
+              disabled={disabled}
+            />{" "}
+            Low-memory slab conversion
+          </label>
+          <label>
+            Slab depth <output>{params.slabDepth} layers</output>
+            <input
+              aria-label="Slab depth"
+              type="range"
+              min="8"
+              max="64"
+              step="4"
+              value={params.slabDepth}
+              onChange={(event) => set("slabDepth", Number(event.target.value))}
+              disabled={disabled || !params.lowMemoryMode}
             />
           </label>
           <label className="check-label">

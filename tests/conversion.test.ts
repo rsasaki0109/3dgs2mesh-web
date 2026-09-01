@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { create } from "webgpu";
+import { buildBenchmarkReport } from "../src/benchmark/report";
+import {
+  extractStreamingMesh,
+  prepareStreamingContext,
+} from "../src/conversion/chunked";
 import {
   analyzeMesh,
   buildSpatialIndex,
@@ -19,6 +24,10 @@ import {
   paramsForPreset,
 } from "../src/conversion/params";
 import { parsePly } from "../src/conversion/ply";
+import {
+  fillSmallBoundaryHoles,
+  processDensityField,
+} from "../src/conversion/quality";
 import { splatFormat } from "../src/conversion/splats";
 import { webGpuDensityShader } from "../src/conversion/webgpu";
 import { outputFilename } from "../src/exporters/names";
@@ -67,6 +76,52 @@ describe("conversion primitives", () => {
     expect(DEFAULT_PARAMS.backend).toBe("auto");
     expect(paramsForPreset("detailed").resolution).toBe(160);
     expect(formatBytes(1024 ** 2)).toBe("1.0 MiB");
+  });
+  it("builds a portable benchmark report without uploading data", () => {
+    const report = buildBenchmarkReport(
+      {
+        sourceName: "sample.ply",
+        sourceBytes: 1024,
+        report: {
+          inputCount: 1,
+          retainedCount: 1,
+          rejectedOpacity: 0,
+          rejectedNonFinite: 0,
+          warnings: [],
+          sourceFormat: "ply",
+        },
+        params: lowParams,
+        backendUsed: "wasm",
+        dims: [8, 8, 8],
+        voxelCount: 512,
+        density: { min: 0, max: 1, nonZero: 10, histogram: [10] },
+        vertices: 4,
+        triangles: 4,
+        elapsed: { voxelizing: 1 },
+        quality: {
+          boundaryEdges: 0,
+          nonManifoldEdges: 0,
+          degenerateFaces: 0,
+          components: 1,
+          preDecimationVertices: 4,
+          preDecimationTriangles: 4,
+          preCleanupVertices: 4,
+          preCleanupTriangles: 4,
+          denoisedVoxels: 0,
+          enclosedVoxelsFilled: 0,
+          holesFilled: 0,
+          peakDensityBytes: 2048,
+        },
+      },
+      {
+        userAgent: "test-browser",
+        hardwareConcurrency: 8,
+        webGpuAvailable: false,
+        timestamp: "2026-09-01T00:00:00.000Z",
+      },
+    );
+    expect(report.schema).toBe("3dgs2mesh-web/benchmark-v1");
+    expect(report.result.backend).toBe("wasm");
   });
   it("selects a positive iso value for a sparse first histogram bin", () => {
     const histogram = Array.from({ length: 32 }, (_, index) =>
@@ -164,6 +219,49 @@ describe("conversion primitives", () => {
     const quality = analyzeMesh(first);
     expect(quality.components).toBeGreaterThan(0);
     expect(quality.degenerateFaces).toBe(0);
+  });
+  it("fills enclosed density voids without changing the grid shape", () => {
+    const dims: [number, number, number] = [5, 5, 5];
+    const density = new Float32Array(125).fill(1);
+    density[(2 * 5 + 2) * 5 + 2] = 0;
+    const result = processDensityField(
+      {
+        dims,
+        min: [0, 0, 0],
+        max: [4, 4, 4],
+        spacing: 1,
+        density,
+        stats: densityStats(density),
+        index: { tileEdge: 8, tileDims: [1, 1, 1], buckets: [[]] },
+      },
+      0.5,
+      0,
+      true,
+    );
+    expect(result.enclosedVoxelsFilled).toBe(1);
+    expect(result.field.density).toHaveLength(125);
+    expect(result.field.density[(2 * 5 + 2) * 5 + 2]).toBeGreaterThan(0.5);
+  });
+  it("caps a small simple boundary loop", () => {
+    const openTetrahedron: MeshData = {
+      positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]),
+      colors: new Float32Array(12).fill(0.5),
+      normals: new Float32Array(12),
+      indices: new Uint32Array([0, 1, 3, 1, 2, 3, 2, 0, 3]),
+    };
+    const filled = fillSmallBoundaryHoles(openTetrahedron, 3);
+    expect(filled.holesFilled).toBe(1);
+    expect(filled.mesh.indices.length / 3).toBe(6);
+    expect(analyzeMesh(filled.mesh).boundaryEdges).toBe(0);
+  });
+  it("extracts a mesh through bounded density slabs", () => {
+    const params = { ...lowParams, lowMemoryMode: true, slabDepth: 8 };
+    const context = prepareStreamingContext([simpleGaussian()], params);
+    const result = extractStreamingMesh(context, params, context.automaticIso);
+    expect(result.mesh.indices.length).toBeGreaterThan(0);
+    expect(context.peakDensityBytes).toBeLessThan(
+      context.dims[0] * context.dims[1] * context.dims[2] * 4,
+    );
   });
 });
 

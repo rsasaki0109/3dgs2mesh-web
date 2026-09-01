@@ -1,10 +1,19 @@
 import {
+  extractStreamingMesh,
+  prepareStreamingContext,
+  type StreamingContext,
+} from "../conversion/chunked";
+import {
   analyzeMesh,
   cleanupMesh,
   decimateMesh,
   extractMarchingTetrahedra,
 } from "../conversion/engine";
 import { automaticIso } from "../conversion/iso";
+import {
+  fillSmallBoundaryHoles,
+  processDensityField,
+} from "../conversion/quality";
 import { decodeSplats, packActivatedGaussians } from "../conversion/splats";
 import { voxelizeWebGpu } from "../conversion/webgpu";
 import type {
@@ -24,6 +33,7 @@ interface WasmDensityStats extends DensityStats {
 interface Session {
   wasm?: ConversionSession;
   field?: GridField;
+  streaming?: StreamingContext;
   gaussians?: Gaussian[];
   report: ParseReport;
   density: WasmDensityStats;
@@ -31,7 +41,7 @@ interface Session {
   voxelCount: number;
   gridMemory: number;
   elapsed: Record<string, number>;
-  backendUsed: "webgpu" | "wasm";
+  backendUsed: "webgpu" | "wasm" | "cpu-streaming";
 }
 
 let session: Session | undefined;
@@ -147,7 +157,32 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
           elapsed.parsing,
         );
         let webGpuError: string | undefined;
-        if (request.params.backend !== "wasm") {
+        if (request.params.lowMemoryMode) {
+          const voxelStart = performance.now();
+          if (request.params.fillEnclosedVoids)
+            parsed.report.warnings.push(
+              "Outside flood fill is disabled in low-memory slab mode because the complete occupancy volume is not resident.",
+            );
+          const streaming = prepareStreamingContext(
+            parsed.gaussians,
+            request.params,
+            (value, message) =>
+              progress(request.id, "voxelizing", value, message),
+          );
+          elapsed.voxelizing = performance.now() - voxelStart;
+          session = {
+            streaming,
+            report: parsed.report,
+            density: { ...streaming.stats, iso: streaming.automaticIso },
+            dims: streaming.dims,
+            voxelCount:
+              streaming.dims[0] * streaming.dims[1] * streaming.dims[2],
+            gridMemory: streaming.peakDensityBytes,
+            elapsed,
+            backendUsed: "cpu-streaming",
+          };
+        }
+        if (!session && request.params.backend !== "wasm") {
           const voxelStart = performance.now();
           try {
             progress(
@@ -300,16 +335,43 @@ async function extractAndReply(
   let mesh: MeshData;
   let preCleanupVertices = 0;
   let preCleanupTriangles = 0;
-  if (session.wasm) {
+  let denoisedVoxels = 0;
+  let enclosedVoxelsFilled = 0;
+  if (session.streaming) {
+    const streamed = extractStreamingMesh(
+      session.streaming,
+      params,
+      iso,
+      (value, message) => progress(id, "extracting", value, message),
+    );
+    mesh = streamed.mesh;
+    denoisedVoxels = streamed.denoisedVoxels;
+    enclosedVoxelsFilled = streamed.enclosedVoxelsFilled;
+    preCleanupVertices = mesh.positions.length / 3;
+    preCleanupTriangles = mesh.indices.length / 3;
+    session.elapsed.extracting = performance.now() - extractStart;
+    const cleanupStart = performance.now();
+    mesh = cleanupMesh(
+      mesh,
+      params.keepLargestComponent,
+      params.minComponentFaces,
+      params.smoothingIterations,
+    );
+    session.elapsed.cleaning = performance.now() - cleanupStart;
+  } else if (session.wasm) {
     session.wasm.set_iso_threshold(iso);
     session.wasm.extract_mesh(
       params.keepLargestComponent,
       params.minComponentFaces,
       params.smoothingIterations,
+      params.densityDenoiseIterations,
+      params.fillEnclosedVoids,
     );
     session.elapsed.extracting = performance.now() - extractStart;
     preCleanupVertices = session.wasm.raw_vertex_count();
     preCleanupTriangles = session.wasm.raw_triangle_count();
+    denoisedVoxels = session.wasm.denoised_voxel_count();
+    enclosedVoxelsFilled = session.wasm.enclosed_voxel_count();
     mesh = {
       positions: session.wasm.mesh_positions(),
       normals: session.wasm.mesh_normals(),
@@ -319,8 +381,16 @@ async function extractAndReply(
   } else {
     if (!session.field || !session.gaussians)
       throw new Error("WebGPU session data is unavailable");
-    const raw = extractMarchingTetrahedra(
+    const processed = processDensityField(
       session.field,
+      iso,
+      params.densityDenoiseIterations,
+      params.fillEnclosedVoids,
+    );
+    denoisedVoxels = processed.denoisedVoxels;
+    enclosedVoxelsFilled = processed.enclosedVoxelsFilled;
+    const raw = extractMarchingTetrahedra(
+      processed.field,
       session.gaussians,
       iso,
       params.sigmaRadius,
@@ -339,16 +409,22 @@ async function extractAndReply(
     session.elapsed.cleaning = performance.now() - cleanupStart;
   }
   progress(id, "cleaning", 1, "Connected components cleaned");
+  const holeFill = fillSmallBoundaryHoles(mesh, params.maxHoleEdges);
+  mesh = holeFill.mesh;
   const preDecimationVertices = mesh.positions.length / 3;
   const preDecimationTriangles = mesh.indices.length / 3;
   if (params.decimationRatio < 0.999)
-    mesh = decimateMesh(mesh, params.decimationRatio);
+    mesh = decimateMesh(mesh, params.decimationRatio, params.decimationMethod);
   const quality = {
     ...analyzeMesh(mesh),
     preDecimationVertices,
     preDecimationTriangles,
     preCleanupVertices,
     preCleanupTriangles,
+    denoisedVoxels,
+    enclosedVoxelsFilled,
+    holesFilled: holeFill.holesFilled,
+    peakDensityBytes: session.streaming?.peakDensityBytes ?? session.gridMemory,
   };
   progress(id, "normals", 1, "Normals and DC colors ready");
   progress(id, "ready", 1);
@@ -365,6 +441,8 @@ async function extractAndReply(
     backendTimings: session.field?.backendTimings,
     validation: session.field?.validation,
     quality,
+    gpuInfo: session.field?.gpuInfo,
+    lowMemoryUsed: Boolean(session.streaming),
   };
   self.postMessage(
     { type: "ready", id, result },

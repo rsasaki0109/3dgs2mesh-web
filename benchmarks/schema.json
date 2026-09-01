@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rsasaki0109.github.io/3dgs2mesh-web/benchmarks/schema.json",
+  "title": "3DGS2Mesh Web benchmark report",
+  "type": "object",
+  "required": [
+    "schema",
+    "appVersion",
+    "timestamp",
+    "environment",
+    "source",
+    "params",
+    "result"
+  ],
+  "properties": {
+    "schema": { "const": "3dgs2mesh-web/benchmark-v1" },
+    "appVersion": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "environment": { "type": "object" },
+    "gpu": { "type": ["object", "null"] },
+    "source": { "type": "object" },
+    "params": { "type": "object" },
+    "result": {
+      "type": "object",
+      "required": [
+        "backend",
+        "dims",
+        "voxelCount",
+        "vertices",
+        "triangles",
+        "elapsedMs"
+      ]
+    }
+  }
+}

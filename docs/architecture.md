@@ -5,6 +5,7 @@ React UI ── worker client ── module Worker
   │                             │
   ├─ Three.js/Spark viewer      ├─ PLY parser or Spark packed decoder
   └─ local exporters            ├─ tiled WebGPU density → TS meshing
+                                ├─ bounded CPU density slabs → merged meshing
                                 └─ Rust/WASM density + meshing
 ```
 
@@ -20,7 +21,11 @@ The default `auto` backend first requests a WebGPU adapter. TypeScript builds de
 
 If WebGPU is missing, no adapter can be acquired, a buffer/dispatch limit is exceeded, the device is lost, validation fails, or setup fails, `auto` reports a warning and uses the single-threaded Rust/WASM session. The `webgpu` setting makes those failures actionable instead of falling back. Neither route needs WebAssembly threads, SharedArrayBuffer, COOP/COEP, CUDA, or a server.
 
+Low-memory mode builds the global spatial index once, then evaluates Z slabs through repeated exact statistics, histogram, and extraction passes. It never allocates the complete Float32 density volume. Slab meshes share world coordinates and are deterministically welded before component cleanup, optional hole caps, smoothing, quadric-guided reduction, and diagnostics. Because the full occupancy volume is absent, outside flood fill is explicitly disabled in this mode.
+
 `src/conversion` contains input normalization, activation math, the deterministic spatial index, the WebGPU backend, TypeScript field/meshing support, and state helpers. `crates/mesh-core` contains browser-independent Rust math and exporters; `crates/mesh-wasm` provides a staged `ConversionSession` with PLY and activated-Gaussian constructors.
+
+`src/benchmark/report.ts` creates a versioned local JSON report. The UI never submits it. `benchmarks/schema.json`, the GPU issue template, and `scripts/summarize-benchmarks.mjs` form the opt-in community verification path. `tests/e2e/quality.spec.ts` accepts a maintainer-owned local asset path and emits topology metrics without committing or uploading that asset.
 
 ## Viewer, export, and deployment
 

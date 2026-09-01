@@ -39,6 +39,12 @@ export interface ConversionParams {
   minComponentFaces: number;
   smoothingIterations: number;
   decimationRatio: number;
+  decimationMethod: "quadric" | "cluster";
+  densityDenoiseIterations: number;
+  fillEnclosedVoids: boolean;
+  maxHoleEdges: number;
+  lowMemoryMode: boolean;
+  slabDepth: number;
 }
 
 export type PresetName = "fast" | "balanced" | "detailed";
@@ -64,6 +70,8 @@ export interface GridField {
     maxAbsError: number;
     maxRelativeError: number;
   };
+  gpuInfo?: GpuInfo;
+  gridOffset?: Vec3;
 }
 
 export interface SpatialIndex {
@@ -88,6 +96,17 @@ export interface MeshQuality {
   preDecimationTriangles: number;
   preCleanupVertices: number;
   preCleanupTriangles: number;
+  denoisedVoxels: number;
+  enclosedVoxelsFilled: number;
+  holesFilled: number;
+  peakDensityBytes: number;
+}
+
+export interface GpuInfo {
+  vendor?: string;
+  architecture?: string;
+  device?: string;
+  description?: string;
 }
 
 export interface ConversionResult {
@@ -159,10 +178,12 @@ export interface WorkerReadyMessage {
     density: DensityStats;
     isoThreshold: number;
     elapsed: Record<string, number>;
-    backendUsed: "webgpu" | "wasm";
+    backendUsed: "webgpu" | "wasm" | "cpu-streaming";
     backendTimings?: GridField["backendTimings"];
     validation?: GridField["validation"];
     quality: MeshQuality;
+    gpuInfo?: GpuInfo;
+    lowMemoryUsed: boolean;
   };
 }
 

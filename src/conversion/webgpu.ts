@@ -120,6 +120,7 @@ export async function voxelizeWebGpu(
     powerPreference: "high-performance",
   });
   if (!adapter) throw new Error("No compatible WebGPU adapter is available");
+  const adapterInfo = adapter.info;
   const estimate = estimateGrid(gaussians, params);
   if (estimate.bytes > 640 * 1024 * 1024) {
     throw new Error(
@@ -323,6 +324,12 @@ export async function voxelizeWebGpu(
         readback: readbackMs,
       },
       validation: { samples: sampleCount, maxAbsError, maxRelativeError },
+      gpuInfo: {
+        vendor: adapterInfo.vendor || undefined,
+        architecture: adapterInfo.architecture || undefined,
+        device: adapterInfo.device || undefined,
+        description: adapterInfo.description || undefined,
+      },
     };
   } finally {
     for (const buffer of buffers) buffer.destroy();

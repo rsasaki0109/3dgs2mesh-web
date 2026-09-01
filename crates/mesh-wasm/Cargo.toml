@@ -1,8 +1,10 @@
 [package]
 name = "mesh-wasm"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 license = "Apache-2.0"
+description = "WebAssembly bindings for the 3DGS2Mesh Web geometry core"
+repository = "https://github.com/rsasaki0109/3dgs2mesh-web"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

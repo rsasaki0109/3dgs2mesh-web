@@ -22,6 +22,12 @@ export const DEFAULT_PARAMS: ConversionParams = {
   minComponentFaces: 16,
   smoothingIterations: 1,
   decimationRatio: 1,
+  decimationMethod: "quadric",
+  densityDenoiseIterations: 0,
+  fillEnclosedVoids: false,
+  maxHoleEdges: 0,
+  lowMemoryMode: false,
+  slabDepth: 24,
 };
 
 export function paramsForPreset(

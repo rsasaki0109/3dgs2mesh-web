@@ -4,8 +4,10 @@
 export class ConversionSession {
     free(): void;
     [Symbol.dispose](): void;
+    denoised_voxel_count(): number;
     density_stats(): string;
-    extract_mesh(keep_largest: boolean, min_component_faces: number, smoothing_iterations: number): void;
+    enclosed_voxel_count(): number;
+    extract_mesh(keep_largest: boolean, min_component_faces: number, smoothing_iterations: number, denoise_iterations: number, fill_enclosed_voids: boolean): void;
     free(): void;
     /**
      * Creates a session from activated Gaussian data decoded by a compatible
@@ -37,8 +39,10 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_conversionsession_free: (a: number, b: number) => void;
+    readonly conversionsession_denoised_voxel_count: (a: number) => number;
     readonly conversionsession_density_stats: (a: number) => [number, number, number, number];
-    readonly conversionsession_extract_mesh: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly conversionsession_enclosed_voxel_count: (a: number) => number;
+    readonly conversionsession_extract_mesh: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly conversionsession_free: (a: number) => void;
     readonly conversionsession_fromActivated: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly conversionsession_grid_dimensions: (a: number) => [number, number, number];
