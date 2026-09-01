@@ -12,6 +12,5 @@ The project code and original documentation are Apache-2.0.
 - `webgpu` (Dawn for Node.js) — MIT (development-only compilation validation of the WebGPU shader).
 - Rust `wasm-bindgen`, `js-sys`, and `console_error_panic_hook` — MIT/Apache-2.0 dual licenses.
 - Vitest, Playwright, Biome — MIT.
-- The README application screenshot uses the Capybara KSPLAT sample from Octoview by Alfonso Romero — MIT. The screenshot shows actual 3DGS2Mesh Web v0.3 output and does not redistribute the source model.
 
 License texts are provided by the respective packages in `node_modules`/Cargo registry. No source code is copied from the Graphdeco 3DGS repository or academic implementation repositories with additional restrictions. The linked papers and projects in the README are conceptual/interoperability references only.

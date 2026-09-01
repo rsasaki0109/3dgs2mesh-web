@@ -28,11 +28,11 @@
 
 Research pipelines such as GS2Mesh render stereo views and fuse learned depth, while GOF and related methods use training-time information. A static app receiving only one splat asset cannot reproduce those methods faithfully. This project focuses on the useful browser-native subset: anisotropic Gaussian density evaluation, spatial binning, deterministic iso-surface extraction, cleanup, and local export.
 
-## See it in action
+## From Gaussian splats to editable geometry
 
-<p align="center"><a href="https://rsasaki0109.github.io/3dgs2mesh-web/"><img src="docs/screenshot-v2.png" alt="3DGS2Mesh Web converting a real capybara Gaussian splat into an editable mesh" width="100%" /></a></p>
+<p align="center"><a href="https://rsasaki0109.github.io/3dgs2mesh-web/"><img src="docs/concept-splat-to-mesh-v1.webp" alt="A garden statue transitioning from anisotropic Gaussian splats into an editable triangle mesh" width="100%" /></a></p>
 
-<p align="center"><sub>Actual v0.3 app output: a 261k-Gaussian Capybara KSPLAT in Split comparison mode, reconstructed locally at the Fast preset. Source fixture: <a href="https://github.com/affromero/octoview">Octoview</a> (MIT).</sub></p>
+<p align="center"><sub>Concept visualization: one captured object represented as anisotropic Gaussian splats on the left and an editable triangle mesh on the right. This generated illustration is not a reconstruction-quality claim—open the live app to evaluate your own asset.</sub></p>
 
 ## From splat to mesh
 
