@@ -8,6 +8,14 @@ cargo run --release -p mesh-core --example inspect_real -- point_cloud.ply 48 an
 cargo run --release -p mesh-core --example inspect_real -- point_cloud.ply 32 all
 ```
 
+The full browser/Worker/export state path is also available as an opt-in Playwright test:
+
+```bash
+REAL_PLY=/absolute/path/to/point_cloud.ply npm run test:e2e
+```
+
+On PowerShell, use `$env:REAL_PLY = 'C:\\absolute\\path\\point_cloud.ply'` before running `npm run test:e2e`.
+
 The final argument selects all retained Gaussians, a center-quantile crop, or the most anisotropic five percent. The command emits one JSON line containing counts, scale-ratio quantiles, grid and density statistics, selected iso value, mesh counts, and measured stage times. Timings are diagnostics for the current machine, not project benchmarks.
 
 ## September 2026 validation
@@ -24,3 +32,5 @@ Two unmodified `binary_little_endian` Graphdeco-style PLY files were exercised l
 | Large point cloud, all retained | 265,724,108 B | 1,071,462 | 32 | 0.058914445 | 204 | 404 |
 
 The first case exposed a sparse-histogram edge case where automatic iso selection returned the lower edge of the first bin (`0`). The algorithm now uses the selected bin midpoint, with matching Rust and TypeScript regression tests. These results establish parser and pipeline interoperability only; they do not measure reconstruction accuracy.
+
+The complete Flowers scene also converted at resolution 64 to 46,872 vertices and 95,164 triangles. Its mesh extraction and cleanup took substantially longer than the cropped diagnostics on the validation machine. Consequently, inputs of at least 100 MiB or 500,000 source Gaussians now select Fast automatically; smaller inputs retain Balanced as the default. This is a conservative UX guard, not a performance guarantee.

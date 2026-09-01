@@ -39,6 +39,9 @@ interface Output {
   elapsed: Record<string, number>;
 }
 
+const LARGE_INPUT_BYTES = 100 * 1024 * 1024;
+const LARGE_INPUT_GAUSSIANS = 500_000;
+
 export default function App() {
   const viewerHost = useRef<HTMLDivElement>(null);
   const viewer = useRef<SceneViewer | undefined>(undefined);
@@ -81,6 +84,11 @@ export default function App() {
         const data =
           bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
         const parsed = parsePly(data, params.opacityThreshold);
+        const largeInput =
+          size >= LARGE_INPUT_BYTES ||
+          parsed.report.inputCount >= LARGE_INPUT_GAUSSIANS;
+        if (largeInput)
+          setParams((current) => paramsForPreset("fast", current));
         const owned = data.slice().buffer as ArrayBuffer;
         setSource({
           name,
@@ -344,14 +352,17 @@ export default function App() {
           )}
           {source &&
             (source.report.warnings.length > 0 ||
-              source.size >= 100 * 1024 * 1024) && (
+              source.size >= LARGE_INPUT_BYTES ||
+              source.report.inputCount >= LARGE_INPUT_GAUSSIANS) && (
               <div className="warning-box" role="status">
                 <strong>Input inspection warning</strong>
-                {source.size >= 100 * 1024 * 1024 && (
+                {(source.size >= LARGE_INPUT_BYTES ||
+                  source.report.inputCount >= LARGE_INPUT_GAUSSIANS) && (
                   <span>
-                    This {formatFileSize(source.size)} source is large. Start
-                    with Fast; parsing, spatial bins, preview data, and mesh
-                    buffers require memory in addition to the density grid.
+                    This {formatFileSize(source.size)} source is large, so Fast
+                    was selected automatically. Parsing, spatial bins, preview
+                    data, and mesh buffers require memory in addition to the
+                    density grid.
                   </span>
                 )}
                 {source.report.warnings.map((warning) => (
